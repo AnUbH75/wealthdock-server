@@ -1,6 +1,9 @@
 """FastAPI application factory for wealthdock-server."""
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from wealthdock_server.core.config import get_settings
 
 
 def create_app() -> FastAPI:
@@ -23,6 +26,15 @@ def create_app() -> FastAPI:
     async def health() -> dict[str, str]:
         """Liveness check used by orchestrators/self-host deployments."""
         return {"status": "ok"}
+
+    settings = get_settings()
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     return app
 
