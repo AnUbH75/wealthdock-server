@@ -3,7 +3,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.wealthdock_server.core.config import get_settings
+from wealthdock_server.core.config import get_settings
 
 
 def create_app() -> FastAPI:
