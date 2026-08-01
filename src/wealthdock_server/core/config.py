@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     local development, see `.env.example` for the full list of keys).
     """
 
+    cors_origins: list[str] = ["http://localhost:5173", "http://localhost:3000"]
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     app_env: str = "development"
