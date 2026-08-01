@@ -14,18 +14,14 @@ class Settings(BaseSettings):
 
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:3000"]
 
-    model_config = SettingsConfigDict(
-        env_file=".env", env_file_encoding="utf-8", extra="ignore"
-    )
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     app_env: str = "development"
     app_host: str = "0.0.0.0"
     app_port: int = 8000
     log_level: str = "info"
 
-    database_url: str = (
-        "postgresql+asyncpg://wealthdock:wealthdock@localhost:5432/wealthdock"
-    )
+    database_url: str = "postgresql+asyncpg://wealthdock:wealthdock@localhost:5432/wealthdock"
 
     jwt_secret: str = "change-me-in-production"
     jwt_algorithm: str = "HS256"
