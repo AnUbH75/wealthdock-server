@@ -36,6 +36,7 @@ async def get_current_user(
         ) from e
 
     import uuid
+
     try:
         user_uuid = uuid.UUID(user_id)
     except ValueError as e:

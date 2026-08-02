@@ -11,9 +11,7 @@ from wealthdock_server.main import app
 # In-memory SQLite async database for testing
 DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 engine = create_async_engine(DATABASE_URL, echo=False)
-TestingSessionLocal = async_sessionmaker(
-    bind=engine, class_=AsyncSession, expire_on_commit=False
-)
+TestingSessionLocal = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
 
 
 async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
