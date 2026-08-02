@@ -3,7 +3,7 @@
 import datetime
 import uuid
 
-from sqlalchemy import Boolean, DateTime, String, Uuid
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from wealthdock_server.db.base import Base
@@ -26,6 +26,18 @@ class User(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, nullable=False
     )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
+    )
+
+
+class SyncState(Base):
+    """Stores sync payloads for a user to keep multiple devices consistent."""
+
+    __tablename__ = "sync_states"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    payload: Mapped[str] = mapped_column(String, nullable=False)
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
     )
