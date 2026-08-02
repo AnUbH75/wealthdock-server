@@ -14,7 +14,7 @@ COPY pyproject.toml uv.lock* ./
 RUN uv sync --no-install-project --no-dev --no-editable
 
 COPY src ./src
-COPY README.md ./
+COPY README.md alembic.ini ./
 RUN uv sync --no-dev --no-editable
 
 
@@ -26,6 +26,7 @@ WORKDIR /app
 
 COPY --from=builder /app/.venv /app/.venv
 COPY --from=builder /app/src /app/src
+COPY --from=builder /app/alembic.ini /app/alembic.ini
 
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1

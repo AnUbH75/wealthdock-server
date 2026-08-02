@@ -1,7 +1,27 @@
-# Local development only. Brings up Postgres for wealthdock-server.
+# Self-hosted deployment setup for wealthdock-server.
 # Run: docker compose up -d
 
 services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: wealthdock-server:latest
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://wealthdock:wealthdock@postgres:5432/wealthdock
+      - APP_ENV=production
+      - JWT_SECRET=change-me-in-production-use-a-secure-random-key
+      - JWT_ALGORITHM=HS256
+      - JWT_ACCESS_TOKEN_EXPIRE_MINUTES=60
+    command: >
+      sh -c "alembic upgrade head && uvicorn wealthdock_server.main:app --host 0.0.0.0 --port 8000"
+
   postgres:
     image: postgres:16
     restart: unless-stopped
