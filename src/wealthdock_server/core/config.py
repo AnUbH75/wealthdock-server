@@ -1,9 +1,15 @@
 """Application settings, read from environment variables / .env file."""
 
 from functools import lru_cache
+from typing import TYPE_CHECKING, Any
 
-from pydantic import field_validator
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+if TYPE_CHECKING:
+    EncryptionKeysType = list[str]
+else:
+    EncryptionKeysType = list[str] | str
 
 
 class Settings(BaseSettings):
@@ -28,23 +34,48 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 60
 
-    encryption_key: str = "SKB7Lqo2vEQfRzL_VoC6aAmpUd32b1gsQLW0Vt4qnRA="
+    encryption_keys: EncryptionKeysType = Field(
+        validation_alias=AliasChoices("encryption_keys", "encryption_key")
+    )
 
-    @field_validator("encryption_key")
+    @field_validator("encryption_keys", mode="before")
     @classmethod
-    def validate_encryption_key(cls, v: str) -> str:
-        """Ensure the encryption key is a valid Fernet key."""
-        try:
-            from cryptography.fernet import Fernet
+    def parse_encryption_keys(cls, v: Any) -> list[str]:
+        """Parse encryption keys from list or comma-separated string."""
+        if isinstance(v, str):
+            # Support comma-separated keys or JSON array
+            if v.startswith("[") and v.endswith("]"):
+                try:
+                    import json
+                    parsed = json.loads(v)
+                    if isinstance(parsed, list):
+                         return [str(item).strip() for item in parsed]
+                except Exception:
+                    pass
+            return [k.strip() for k in v.split(",") if k.strip()]
+        if isinstance(v, list):
+            return [str(item).strip() for item in v]
+        raise TypeError("encryption_keys must be a list or a string")
 
-            # Test key initialization
-            Fernet(v.encode("utf-8"))
-        except Exception as e:
-            raise ValueError(
-                "Invalid encryption_key. It must be a 32-byte, url-safe, base64-encoded key. "
-                "Generate one using: python -c "
-                '"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"'
-            ) from e
+    @field_validator("encryption_keys")
+    @classmethod
+    def validate_encryption_keys(cls, v: list[str]) -> list[str]:
+        """Ensure there is at least one key and all keys are valid Fernet keys."""
+        if not v:
+            raise ValueError("At least one encryption key must be provided.")
+
+        from cryptography.fernet import Fernet
+        for key in v:
+            try:
+                Fernet(key.encode("utf-8"))
+            except Exception as e:
+                raise ValueError(
+                    f"Invalid encryption key: '{key}'. "
+                    "It must be a 32-byte, url-safe, base64 key. "
+                    "Generate one: python -c "
+                    '"from cryptography.fernet import Fernet; '
+                    'print(Fernet.generate_key().decode())"'
+                ) from e
         return v
 
 
@@ -55,4 +86,4 @@ def get_settings() -> Settings:
     Cached so repeated calls (e.g. via FastAPI dependency injection) don't
     re-parse the environment on every request.
     """
-    return Settings()
+    return Settings()  # type: ignore[call-arg]
