@@ -325,6 +325,7 @@ def test_key_rotation(monkeypatch: pytest.MonkeyPatch) -> None:
         raw_ct = row[0]
 
         from cryptography.fernet import InvalidToken
+
         # Trying to decrypt with key A alone should fail
         f_a = Fernet(key_a.encode("utf-8"))
         with pytest.raises(InvalidToken):
@@ -340,6 +341,7 @@ def test_key_rotation(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_encrypted_decimal_invalid_value() -> None:
     """Verify EncryptedDecimal raises ValueError when decrypted value is not valid Decimal."""
     from wealthdock_server.core.config import get_settings
+
     decorator = EncryptedDecimal()
     # Encrypt a non-numeric string using the current key to bypass decryption
     valid_key = get_settings().encryption_keys[0]

@@ -47,9 +47,10 @@ class Settings(BaseSettings):
             if v.startswith("[") and v.endswith("]"):
                 try:
                     import json
+
                     parsed = json.loads(v)
                     if isinstance(parsed, list):
-                         return [str(item).strip() for item in parsed]
+                        return [str(item).strip() for item in parsed]
                 except Exception:
                     pass
             return [k.strip() for k in v.split(",") if k.strip()]
@@ -65,6 +66,7 @@ class Settings(BaseSettings):
             raise ValueError("At least one encryption key must be provided.")
 
         from cryptography.fernet import Fernet
+
         for key in v:
             try:
                 Fernet(key.encode("utf-8"))
