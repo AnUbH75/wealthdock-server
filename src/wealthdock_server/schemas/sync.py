@@ -27,7 +27,9 @@ class SyncRequest(BaseModel):
         None, description="The client's last sync point. Returns changes modified after this."
     )
     changes: list[SyncItemSchema] = Field(
-        default_factory=list, description="A list of locally changed items to upload."
+        default_factory=list,
+        max_length=500,
+        description="A list of locally changed items to upload.",
     )
 
 

@@ -4,7 +4,7 @@ import datetime
 import uuid
 from typing import Any
 
-from sqlalchemy import ForeignKey, JSON, Boolean, DateTime, String, TypeDecorator, Uuid, func, true
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, String, TypeDecorator, Uuid, func, true
 from sqlalchemy.orm import Mapped, mapped_column, validates
 
 from wealthdock_server.db.base import Base
@@ -84,9 +84,7 @@ class SyncRecord(Base):
     )
     type: Mapped[str] = mapped_column(String(100), nullable=False)
     data: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
-    updated_at: Mapped[datetime.datetime] = mapped_column(
-        TZDateTime, nullable=False
-    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(TZDateTime, nullable=False)
     server_updated_at: Mapped[datetime.datetime] = mapped_column(
         TZDateTime, server_default=func.now(), onupdate=func.now(), nullable=False, index=True
     )

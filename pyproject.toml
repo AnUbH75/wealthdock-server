@@ -88,7 +88,3 @@ markers = [
     "integration: Tests verifying interaction between multiple components.",
 ]
 
-[dependency-groups]
-dev = [
-    "aiosqlite>=0.22.1",
-]

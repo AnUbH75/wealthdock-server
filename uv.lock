@@ -1482,11 +1482,6 @@ dev = [
     { name = "ruff" },
 ]
 
-[package.dev-dependencies]
-dev = [
-    { name = "aiosqlite" },
-]
-
 [package.metadata]
 requires-dist = [
     { name = "aiosqlite", marker = "extra == 'dev'" },
@@ -1508,9 +1503,6 @@ requires-dist = [
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30.0" },
 ]
 provides-extras = ["dev"]
-
-[package.metadata.requires-dev]
-dev = [{ name = "aiosqlite", specifier = ">=0.22.1" }]
 
 [[package]]
 name = "websockets"
