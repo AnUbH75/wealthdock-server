@@ -1,8 +1,8 @@
 """Pydantic schemas for synchronization endpoints."""
 
 import json
-
 from typing import Any
+
 from pydantic import BaseModel, Field, field_validator
 
 DEFAULT_EMPTY_PAYLOAD: dict[str, list[Any]] = {
