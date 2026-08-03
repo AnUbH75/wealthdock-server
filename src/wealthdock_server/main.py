@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from wealthdock_server.core.config import get_settings
 from wealthdock_server.db.session import engine
@@ -15,6 +16,18 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """Manage application lifecycle event handlers."""
     yield
     await engine.dispose()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Manage application lifecycle event handlers (e.g. database engine)."""
+    engine = create_async_engine(get_settings().database_url, echo=False)
+    app.state.db_engine = engine
+    app.state.db_session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        yield
+    finally:
+        await engine.dispose()
 
 
 def create_app() -> FastAPI:
