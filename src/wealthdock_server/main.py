@@ -8,14 +8,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from wealthdock_server.core.config import get_settings
-from wealthdock_server.db.session import engine
-
-
-@asynccontextmanager
-async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-    """Manage application lifecycle event handlers."""
-    yield
-    await engine.dispose()
 
 
 @asynccontextmanager
