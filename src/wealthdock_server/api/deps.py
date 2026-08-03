@@ -1,3 +1,6 @@
+"""Authentication dependencies for API endpoints."""
+
+import uuid
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, status
@@ -21,7 +24,9 @@ async def get_current_user(
     settings = get_settings()
     try:
         payload = jwt.decode(
-            token.credentials, settings.jwt_secret, algorithms=[settings.jwt_algorithm]
+            token.credentials,
+            settings.jwt_secret,
+            algorithms=[settings.jwt_algorithm],
         )
         user_id: str | None = payload.get("sub")
         if user_id is None:
@@ -35,8 +40,6 @@ async def get_current_user(
             detail="Could not validate credentials",
         ) from e
 
-    import uuid
-
     try:
         user_uuid = uuid.UUID(user_id)
     except ValueError as e:
@@ -48,7 +51,10 @@ async def get_current_user(
     result = await db.execute(select(User).where(User.id == user_uuid))
     user = result.scalar_one_or_none()
     if user is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found",
+        )
     if not user.is_active:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Inactive user")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Inactive user")
     return user

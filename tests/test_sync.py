@@ -11,7 +11,7 @@ from wealthdock_server.db.models import SyncState, User
 
 def test_sync_state_model_creation() -> None:
     """Verify SyncState model attributes, relationships, and persistence."""
-    engine = create_engine("sqlite:///:memory:", echo=False)
+    engine = create_engine("sqlite:///", echo=False)
     Base.metadata.create_all(engine)
     session_factory = sessionmaker(bind=engine)
 
@@ -28,6 +28,7 @@ def test_sync_state_model_creation() -> None:
         sync_state = SyncState(
             user_id=user_id,
             payload='{"assets": []}',
+            version=1,
         )
         session.add(sync_state)
         session.commit()
@@ -38,4 +39,5 @@ def test_sync_state_model_creation() -> None:
         assert queried is not None
         assert queried.user_id == user_id
         assert queried.payload == '{"assets": []}'
+        assert queried.version == 1
         assert isinstance(queried.updated_at, datetime.datetime)

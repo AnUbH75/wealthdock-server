@@ -4,7 +4,7 @@ import datetime
 import uuid
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, String, Uuid
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, validates
 
 from wealthdock_server.db.base import Base
 
@@ -30,6 +30,13 @@ class User(Base):
         DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
     )
 
+    @validates("email")
+    def validate_email(self, _key: str, value: str) -> str:
+        """Normalize the email address to lowercase and strip whitespaces."""
+        if value is not None:
+            return value.lower().strip()
+        return value
+
 
 class SyncState(Base):
     """Stores sync payloads for a user to keep multiple devices consistent."""
@@ -38,6 +45,7 @@ class SyncState(Base):
 
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), primary_key=True)
     payload: Mapped[str] = mapped_column(String, nullable=False)
+    version: Mapped[int] = mapped_column(default=1, nullable=False)
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
     )

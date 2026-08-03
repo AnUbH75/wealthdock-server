@@ -23,6 +23,7 @@ def upgrade() -> None:
         "sync_states",
         sa.Column("user_id", sa.Uuid(), nullable=False),
         sa.Column("payload", sa.String(), nullable=False),
+        sa.Column("version", sa.Integer(), server_default="1", nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"]),
         sa.PrimaryKeyConstraint("user_id"),

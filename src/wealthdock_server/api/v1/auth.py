@@ -1,15 +1,25 @@
+"""Authentication endpoints for user registration and login."""
+
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from wealthdock_server.core.security import create_access_token, get_password_hash, verify_password
+from wealthdock_server.core.security import (
+    create_access_token,
+    get_password_hash,
+    verify_password,
+)
 from wealthdock_server.db.models import User
 from wealthdock_server.db.session import get_db
 from wealthdock_server.schemas.auth import Token, UserLogin, UserRegister
 
 router = APIRouter()
+
+# Dummy hash to prevent timing attacks on non-existent users
+DUMMY_HASH = "$2b$12$Ke/xOMv5kCen85Dsbh0xhu9R8a9W8r0k77J3gS4v2X6.F5Y8t5L6O"
 
 
 @router.post("/register", response_model=Token, status_code=status.HTTP_201_CREATED)
@@ -31,7 +41,15 @@ async def register(
         hashed_password=get_password_hash(user_in.password),
     )
     db.add(db_user)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The user with this email already exists.",
+        ) from e
+
     await db.refresh(db_user)
 
     access_token = create_access_token(db_user.id)
@@ -46,11 +64,21 @@ async def login(
     """Authenticate email and password, return JWT token."""
     result = await db.execute(select(User).where(User.email == user_in.email))
     user = result.scalar_one_or_none()
-    if not user or not verify_password(user_in.password, user.hashed_password):
+
+    if not user:
+        # Perform password verification against dummy hash to prevent timing attacks
+        verify_password(user_in.password, DUMMY_HASH)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Incorrect email or password",
         )
+
+    if not verify_password(user_in.password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Incorrect email or password",
+        )
+
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
