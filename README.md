@@ -41,6 +41,20 @@ Run the test suite:
 uv run pytest
 ```
 
+## Key Management & Encryption
+
+Sensitive financial data (account numbers, balances, bank credentials/tokens) is encrypted at rest at the application layer using AES-256 (via cryptography's Fernet implementation).
+
+For self-hosted and production deployments:
+1. Set the `ENCRYPTION_KEY` environment variable (or configure it in your `.env` file).
+2. The key must be a 32-byte, URL-safe, base64-encoded string.
+3. You can generate a new secure key by running:
+   ```bash
+   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+   ```
+4. **Important**: Store this key securely. If this key is lost or modified, all previously encrypted data in the database will be unrecoverable.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
+

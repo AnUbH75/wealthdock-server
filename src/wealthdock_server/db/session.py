@@ -2,16 +2,28 @@
 
 from collections.abc import AsyncGenerator
 
+from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from wealthdock_server.core.config import get_settings
 
-engine = create_async_engine(get_settings().database_url, echo=False)
+# Global fallback engine for non-app contexts (like CLI/scripts/testing fallback)
+_global_engine = None
 
-async_session_factory = async_sessionmaker(engine, expire_on_commit=False)
+
+def _get_global_session_factory() -> async_sessionmaker[AsyncSession]:
+    global _global_engine
+    if _global_engine is None:
+        _global_engine = create_async_engine(get_settings().database_url, echo=False)
+    return async_sessionmaker(_global_engine, expire_on_commit=False)
 
 
-async def get_db() -> AsyncGenerator[AsyncSession]:
+async def get_db(request: Request | None = None) -> AsyncGenerator[AsyncSession, None]:
     """Yield a request-scoped async database session."""
-    async with async_session_factory() as session:
+    if request is not None and hasattr(request.app.state, "db_session_factory"):
+        session_factory = request.app.state.db_session_factory
+    else:
+        session_factory = _get_global_session_factory()
+
+    async with session_factory() as session:
         yield session
