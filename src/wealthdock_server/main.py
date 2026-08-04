@@ -44,6 +44,10 @@ def create_app() -> FastAPI:
         """Liveness check used by orchestrators/self-host deployments."""
         return {"status": "ok"}
 
+    from wealthdock_server.api.v1.sync import router as sync_router
+
+    app.include_router(sync_router, prefix="/api/v1")
+
     settings = get_settings()
     app.add_middleware(
         CORSMiddleware,
