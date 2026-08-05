@@ -47,7 +47,7 @@ uv run pytest
 
 ### Quick Start with Docker Compose
 
-Before running the stack, you must configure required environment variables in a `.env` file (see [Configuration](#configuration) below).
+Before running the stack, configure the required environment variables in a `.env` file (copy `.env.example` to `.env`).
 
 1. Build and bring up the containerized application, migration task, and database services:
    ```bash
@@ -60,15 +60,29 @@ Before running the stack, you must configure required environment variables in a
 
 ### Configuration
 
-All settings are configured via environment variables. Create a `.env` file in the root directory (or inject variables directly in your environment):
+All settings are configured via environment variables. Create a `.env` file in the root directory (see `.env.example`):
 
 - `POSTGRES_PASSWORD`: The password for the PostgreSQL database (required by Docker Compose).
-- `DATABASE_URL`: Connection string for PostgreSQL (e.g. `postgresql+asyncpg://user:pass@host:port/db`).
+- `DATABASE_URL`: Connection string for PostgreSQL (e.g. `postgresql+asyncpg://user:pass@host:port/db`). Note: if your password contains special characters (`@`, `/`, `:`, `#`), ensure it is URL-percent-encoded.
 - `APP_ENV`: Application environment (`production` or `development`).
-- `JWT_SECRET`: Secret key used to sign JWT authentication tokens (ensure this is a secure, random string in production).
+- `JWT_SECRET`: Secret key used to sign JWT authentication tokens (required).
 - `JWT_ALGORITHM`: Signature algorithm (defaults to `HS256`).
 - `JWT_ACCESS_TOKEN_EXPIRE_MINUTES`: Expiry duration for authentication tokens (defaults to `60`).
-- `CORS_ORIGINS`: Comma-separated list of allowed origins (e.g., `http://localhost:3000,https://app.wealthdock.com`).
+- `CORS_ORIGINS`: Allowed origins (required), passed as a comma-separated list (e.g. `http://localhost:3000,https://app.wealthdock.com`) or JSON array.
+- `ENCRYPTION_KEY`: 32-byte URL-safe base64 key for encrypting sensitive data at rest.
+
+## Key Management & Encryption
+
+Sensitive financial data (account numbers, balances, bank credentials/tokens) is encrypted at rest at the application layer using AES-256 (via cryptography's Fernet implementation).
+
+For self-hosted and production deployments:
+1. Set the `ENCRYPTION_KEY` environment variable (or configure it in your `.env` file).
+2. The key must be a 32-byte, URL-safe, base64-encoded string.
+3. You can generate a new secure key by running:
+   ```bash
+   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+   ```
+4. **Important**: Store this key securely. If this key is lost or modified, all previously encrypted data in the database will be unrecoverable.
 
 ## License
 

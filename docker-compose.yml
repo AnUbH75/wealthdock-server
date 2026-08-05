@@ -48,15 +48,15 @@ services:
       - DATABASE_URL=postgresql+asyncpg://wealthdock:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/wealthdock
       - APP_ENV=production
       - JWT_SECRET=${JWT_SECRET:?set JWT_SECRET in .env}
-      - JWT_ALGORITHM=HS256
-      - JWT_ACCESS_TOKEN_EXPIRE_MINUTES=60
-      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
+      - JWT_ACCESS_TOKEN_EXPIRE_MINUTES=${JWT_ACCESS_TOKEN_EXPIRE_MINUTES:-60}
+      - CORS_ORIGINS=${CORS_ORIGINS:?set CORS_ORIGINS in .env}
     healthcheck:
       test: [
         "CMD",
         "python",
         "-c",
-        "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
+        "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"
       ]
       interval: 30s
       timeout: 10s
