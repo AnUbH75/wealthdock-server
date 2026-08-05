@@ -1,7 +1,7 @@
 """Create sync_states table.
 
 Revision ID: a5d1b5e3f4a0
-Revises: 935c9f58df30
+Revises: b8c83ca7aa53
 Create Date: 2026-08-02 11:08:00.000000
 """
 
@@ -12,7 +12,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "a5d1b5e3f4a0"
-down_revision: str | None = "935c9f58df30"
+down_revision: str | None = "b8c83ca7aa53"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

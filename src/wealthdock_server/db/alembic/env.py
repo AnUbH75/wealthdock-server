@@ -9,11 +9,14 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from wealthdock_server.core.config import get_settings
 from wealthdock_server.db.base import Base
-from wealthdock_server.db.models import User  # noqa: F401
 
 # Import model modules here so they register on Base.metadata before
 # Alembic's autogenerate inspects it, e.g.:
 #   from wealthdock_server.accounts.models import Account  # noqa: ERA001
+from wealthdock_server.db.models import (
+    SyncRecord,  # noqa: F401
+    User,  # noqa: F401
+)
 
 config = context.config
 

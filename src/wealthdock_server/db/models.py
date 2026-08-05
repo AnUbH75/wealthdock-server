@@ -5,6 +5,7 @@ import uuid
 from typing import Any
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     DateTime,
     ForeignKey,
@@ -17,6 +18,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, validates
 
 from wealthdock_server.db.base import Base
+from wealthdock_server.db.encryption import EncryptedString
 
 
 class TZDateTime(TypeDecorator[datetime.datetime]):
@@ -82,8 +84,7 @@ class User(Base):
 class SyncState(Base):
     """Stores sync payloads for a user to keep multiple devices consistent.
 
-    NOTE: Once PR #17 (encryption-at-rest) lands, the payload column will be
-    updated to EncryptedJSON / EncryptedString so user financial data is encrypted at rest.
+    Uses EncryptedString so user financial data is encrypted at rest using MultiFernet.
     """
 
     __tablename__ = "sync_states"
@@ -91,8 +92,29 @@ class SyncState(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
     )
-    payload: Mapped[str] = mapped_column(String, nullable=False)
+    payload: Mapped[str] = mapped_column(EncryptedString, nullable=False)
     version: Mapped[int] = mapped_column(default=1, nullable=False)
     updated_at: Mapped[datetime.datetime] = mapped_column(
         TZDateTime, default=utcnow, onupdate=utcnow, nullable=False
     )
+
+
+class SyncRecord(Base):
+    """A single syncable record representing financial data/state.
+
+    Uses a last-write-wins protocol via the `updated_at` timestamp.
+    """
+
+    __tablename__ = "sync_records"
+
+    id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    type: Mapped[str] = mapped_column(String(100), nullable=False)
+    data: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    updated_at: Mapped[datetime.datetime] = mapped_column(TZDateTime, nullable=False)
+    server_updated_at: Mapped[datetime.datetime] = mapped_column(
+        TZDateTime, server_default=func.now(), onupdate=func.now(), nullable=False, index=True
+    )
+    deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
