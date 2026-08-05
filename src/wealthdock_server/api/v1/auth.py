@@ -1,5 +1,6 @@
 """Authentication endpoints for user registration and login."""
 
+import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -27,14 +28,20 @@ async def register(
     user_in: UserRegister,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> Token:
-    """Register a new user account."""
+    """Register a new user account.
+
+    To defend against user enumeration, this endpoint returns a 201 Created
+    response with a non-working token when the email address is already registered.
+    """
     result = await db.execute(select(User).where(User.email == user_in.email))
     user = result.scalar_one_or_none()
     if user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="The user with this email already exists.",
-        )
+        # Perform password hashing to match timing of actual registration
+        # and defend against timing attacks
+        get_password_hash(user_in.password)
+        dummy_id = uuid.uuid4()
+        access_token = create_access_token(dummy_id)
+        return Token(access_token=access_token, token_type="bearer", email=user_in.email)
 
     db_user = User(
         email=user_in.email,
@@ -43,12 +50,13 @@ async def register(
     db.add(db_user)
     try:
         await db.commit()
-    except IntegrityError as e:
+    except IntegrityError:
         await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="The user with this email already exists.",
-        ) from e
+        # Handle race condition collision without leaking user existence
+        get_password_hash(user_in.password)
+        dummy_id = uuid.uuid4()
+        access_token = create_access_token(dummy_id)
+        return Token(access_token=access_token, token_type="bearer", email=user_in.email)
 
     await db.refresh(db_user)
 
@@ -69,19 +77,19 @@ async def login(
         # Perform password verification against dummy hash to prevent timing attacks
         verify_password(user_in.password, DUMMY_HASH)
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
         )
 
     if not verify_password(user_in.password, user.hashed_password):
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
         )
 
     if not user.is_active:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Inactive user",
         )
 

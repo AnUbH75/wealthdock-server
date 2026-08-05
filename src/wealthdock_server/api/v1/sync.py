@@ -4,6 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from wealthdock_server.api.deps import get_current_user
@@ -34,7 +35,9 @@ async def update_sync_state(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> SyncPayload:
     """Update/synchronize user's assets and configurations using optimistic lock."""
-    result = await db.execute(select(SyncState).where(SyncState.user_id == current_user.id))
+    result = await db.execute(
+        select(SyncState).where(SyncState.user_id == current_user.id).with_for_update()
+    )
     sync_state = result.scalar_one_or_none()
 
     if not sync_state:
@@ -47,6 +50,14 @@ async def update_sync_state(
             )
         sync_state = SyncState(user_id=current_user.id, payload=payload_in.payload, version=1)
         db.add(sync_state)
+        try:
+            await db.commit()
+        except IntegrityError as e:
+            await db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="State conflict: concurrent modification during initialization.",
+            ) from e
     else:
         if sync_state.version != payload_in.version:
             raise HTTPException(
@@ -55,7 +66,7 @@ async def update_sync_state(
             )
         sync_state.payload = payload_in.payload
         sync_state.version += 1
+        await db.commit()
 
-    await db.commit()
     await db.refresh(sync_state)
     return SyncPayload(payload=sync_state.payload, version=sync_state.version)

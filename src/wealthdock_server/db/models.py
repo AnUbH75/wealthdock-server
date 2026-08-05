@@ -2,11 +2,46 @@
 
 import datetime
 import uuid
+from typing import Any
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Uuid
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    String,
+    TypeDecorator,
+    Uuid,
+    func,
+    true,
+)
 from sqlalchemy.orm import Mapped, mapped_column, validates
 
 from wealthdock_server.db.base import Base
+
+
+class TZDateTime(TypeDecorator[datetime.datetime]):
+    """DateTime type that ensures timezone-awareness, even on SQLite."""
+
+    impl = DateTime(timezone=True)
+    cache_ok = True
+
+    def process_bind_param(
+        self, value: datetime.datetime | None, _dialect: Any
+    ) -> datetime.datetime | None:
+        """Verify the datetime is timezone-aware and convert to UTC before binding."""
+        if value is not None:
+            if value.tzinfo is None:
+                raise ValueError("datetime must be timezone-aware")
+            return value.astimezone(datetime.UTC)
+        return value
+
+    def process_result_value(
+        self, value: datetime.datetime | None, _dialect: Any
+    ) -> datetime.datetime | None:
+        """Assure timezone-awareness on datetime retrieved from database."""
+        if value is not None and value.tzinfo is None:
+            return value.replace(tzinfo=datetime.UTC)
+        return value
 
 
 def utcnow() -> datetime.datetime:
@@ -22,12 +57,18 @@ class User(Base):
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default=true(), nullable=False
+    )
     created_at: Mapped[datetime.datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow, nullable=False
+        TZDateTime, default=utcnow, server_default=func.now(), nullable=False
     )
     updated_at: Mapped[datetime.datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
+        TZDateTime,
+        default=utcnow,
+        onupdate=utcnow,
+        server_default=func.now(),
+        nullable=False,
     )
 
     @validates("email")
@@ -39,13 +80,19 @@ class User(Base):
 
 
 class SyncState(Base):
-    """Stores sync payloads for a user to keep multiple devices consistent."""
+    """Stores sync payloads for a user to keep multiple devices consistent.
+
+    NOTE: Once PR #17 (encryption-at-rest) lands, the payload column will be
+    updated to EncryptedJSON / EncryptedString so user financial data is encrypted at rest.
+    """
 
     __tablename__ = "sync_states"
 
-    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
     payload: Mapped[str] = mapped_column(String, nullable=False)
     version: Mapped[int] = mapped_column(default=1, nullable=False)
     updated_at: Mapped[datetime.datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
+        TZDateTime, default=utcnow, onupdate=utcnow, nullable=False
     )

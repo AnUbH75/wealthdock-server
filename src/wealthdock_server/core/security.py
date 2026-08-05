@@ -2,7 +2,8 @@
 
 import datetime
 import logging
-from typing import Any, cast
+import uuid
+from typing import cast
 
 import bcrypt
 from jose import jwt  # type: ignore[import-untyped]
@@ -26,7 +27,9 @@ def get_password_hash(password: str) -> str:
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 
-def create_access_token(subject: str | Any, expires_delta: datetime.timedelta | None = None) -> str:
+def create_access_token(
+    subject: str | uuid.UUID, expires_delta: datetime.timedelta | None = None
+) -> str:
     """Generate a JWT token for the given subject (e.g. user id or email)."""
     settings = get_settings()
     if expires_delta:

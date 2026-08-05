@@ -86,7 +86,7 @@ async def test_happy_path_auth_and_sync() -> None:
 
 @pytest.mark.asyncio
 async def test_auth_registration_validation() -> None:
-    """Verify email formatting, password length, and duplicate registration limits."""
+    """Verify email formatting, password byte length, and duplicate registration behavior."""
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         # Invalid email address
@@ -110,6 +110,20 @@ async def test_auth_registration_validation() -> None:
         )
         assert res.status_code == 422
 
+        # Non-ASCII password exceeding 72 bytes (72 chars of 'ä' = 144 bytes)
+        res = await client.post(
+            "/api/v1/auth/register",
+            json={"email": "nonascii@example.com", "password": "ä" * 72},
+        )
+        assert res.status_code == 422
+
+        # Valid non-ASCII password (30 chars of 'ä' = 60 bytes <= 72)
+        res = await client.post(
+            "/api/v1/auth/register",
+            json={"email": "valid_nonascii@example.com", "password": "ä" * 30},
+        )
+        assert res.status_code == 201
+
         # Valid registration
         res = await client.post(
             "/api/v1/auth/register",
@@ -117,17 +131,25 @@ async def test_auth_registration_validation() -> None:
         )
         assert res.status_code == 201
 
-        # Duplicate email registration (should fail with 400)
+        # Duplicate email registration returns 201 with dummy token to defend against enumeration
         res = await client.post(
             "/api/v1/auth/register",
             json={"email": "dup@example.com", "password": "secure_password"},
         )
-        assert res.status_code == 400
+        assert res.status_code == 201
+        dummy_token = res.json()["access_token"]
+
+        # Using dummy token fails authentication (401 Unauthorized)
+        res = await client.get(
+            "/api/v1/sync",
+            headers={"Authorization": f"Bearer {dummy_token}"},
+        )
+        assert res.status_code == 401
 
 
 @pytest.mark.asyncio
 async def test_auth_login_edge_cases() -> None:
-    """Verify wrong password, wrong email, and inactive user rejection."""
+    """Verify wrong password, wrong email, and inactive user rejection return 401."""
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         # Seed a user
@@ -141,14 +163,14 @@ async def test_auth_login_edge_cases() -> None:
             "/api/v1/auth/login",
             json={"email": "user@example.com", "password": "wrong_password_123"},
         )
-        assert res.status_code == 400
+        assert res.status_code == 401
 
         # Login with non-existent email
         res = await client.post(
             "/api/v1/auth/login",
             json={"email": "missing@example.com", "password": "secure_password"},
         )
-        assert res.status_code == 400
+        assert res.status_code == 401
 
         # Login with inactive user
         async with TestingSessionLocal() as session:
@@ -161,7 +183,7 @@ async def test_auth_login_edge_cases() -> None:
             "/api/v1/auth/login",
             json={"email": "user@example.com", "password": "secure_password"},
         )
-        assert res.status_code == 400
+        assert res.status_code == 401
 
 
 @pytest.mark.asyncio

@@ -25,7 +25,7 @@ def upgrade() -> None:
         sa.Column("payload", sa.String(), nullable=False),
         sa.Column("version", sa.Integer(), server_default="1", nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
-        sa.ForeignKeyConstraint(["user_id"], ["users.id"]),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("user_id"),
     )
 
