@@ -8,8 +8,13 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 if TYPE_CHECKING:
     EncryptionKeysType = list[str]
+    CorsOriginsType = list[str]
 else:
+    # At runtime the union keeps pydantic-settings from treating these as
+    # "complex" fields, which would make it JSON-decode the raw environment
+    # value in EnvSettingsSource before any validator runs.
     EncryptionKeysType = list[str] | str
+    CorsOriginsType = list[str] | str
 
 
 class Settings(BaseSettings):
@@ -19,7 +24,7 @@ class Settings(BaseSettings):
     local development, see `.env.example` for the full list of keys).
     """
 
-    cors_origins: list[str] = ["http://localhost:5173", "http://localhost:3000"]
+    cors_origins: CorsOriginsType = ["http://localhost:5173", "http://localhost:3000"]
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
