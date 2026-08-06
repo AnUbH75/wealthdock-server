@@ -124,6 +124,8 @@ async def test_get_standalone_session() -> None:
 def test_get_db_fastapi_dependency_injection() -> None:
     """Verify get_db works through FastAPI dependency resolution machinery."""
     test_app = create_app()
+            fallback_generator = get_db(None)  # type: ignore[arg-type]
+            await fallback_generator.__anext__()
 
     @test_app.get("/test-db-route")
     async def test_route(db: AsyncSession = Depends(get_db)) -> dict[str, str]:  # noqa: B008

@@ -34,6 +34,12 @@ async def dispose_global_engine() -> None:
         await _global_engine.dispose()
         _global_engine = None
         _global_session_factory = None
+async def get_db(request: Request = None) -> AsyncGenerator[AsyncSession, None]:  # type: ignore[assignment]
+    """Yield a request-scoped async database session."""
+    if request is not None and hasattr(request.app.state, "db_session_factory"):
+        session_factory = request.app.state.db_session_factory
+    else:
+        session_factory = _get_global_session_factory()
 
 
 @asynccontextmanager
