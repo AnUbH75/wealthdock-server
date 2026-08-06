@@ -5,6 +5,7 @@ from contextlib import suppress
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from cryptography.fernet import Fernet
 from fastapi import Depends
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
@@ -134,3 +135,60 @@ def test_get_db_fastapi_dependency_injection() -> None:
         res = client.get("/test-db-route")
         assert res.status_code == 200
         assert res.json() == {"status": "ok"}
+
+
+def test_cors_origins_parsing() -> None:
+    """Verify Settings parses comma-separated string, JSON array string, and list."""
+    from wealthdock_server.core.config import Settings
+
+    fernet_key = Fernet.generate_key().decode()
+
+    # 1. Comma-separated string
+    s1 = Settings(
+        cors_origins="http://localhost:3000, https://app.wealthdock.com",  # type: ignore[arg-type]
+        encryption_keys=[fernet_key],
+    )
+    assert s1.cors_origins == ["http://localhost:3000", "https://app.wealthdock.com"]
+
+    # 2. JSON array string
+    s2 = Settings(
+        cors_origins='["http://localhost:3000", "https://app.wealthdock.com"]',  # type: ignore[arg-type]
+        encryption_keys=[fernet_key],
+    )
+    assert s2.cors_origins == ["http://localhost:3000", "https://app.wealthdock.com"]
+
+    # 3. List of strings
+    s3 = Settings(cors_origins=["http://localhost:3000"], encryption_keys=[fernet_key])
+    assert s3.cors_origins == ["http://localhost:3000"]
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("http://localhost:3000", ["http://localhost:3000"]),
+        (
+            "http://localhost:3000,https://app.wealthdock.com",
+            ["http://localhost:3000", "https://app.wealthdock.com"],
+        ),
+        (
+            '["http://localhost:3000", "https://app.wealthdock.com"]',
+            ["http://localhost:3000", "https://app.wealthdock.com"],
+        ),
+    ],
+)
+def test_cors_origins_parsed_from_environment(
+    monkeypatch: pytest.MonkeyPatch, raw: str, expected: list[str]
+) -> None:
+    """Verify CORS_ORIGINS is read from the environment, as docker-compose supplies it.
+
+    Constructing Settings(...) directly bypasses EnvSettingsSource, so this goes
+    through the environment to pin the form self-hosters actually use.
+    """
+    from wealthdock_server.core.config import Settings
+
+    monkeypatch.setenv("CORS_ORIGINS", raw)
+    monkeypatch.setenv("ENCRYPTION_KEY", Fernet.generate_key().decode())
+
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+
+    assert settings.cors_origins == expected

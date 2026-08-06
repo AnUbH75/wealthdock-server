@@ -1,4 +1,4 @@
-# Local development only. Brings up Postgres for wealthdock-server.
+# Self-hosted deployment setup for wealthdock-server.
 # Run: docker compose up -d
 
 services:
@@ -7,10 +7,10 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: wealthdock
-      POSTGRES_PASSWORD: wealthdock
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: wealthdock
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -18,6 +18,53 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  db-migration:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: wealthdock-server:latest
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://wealthdock:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/wealthdock
+      # alembic/env.py builds Settings, which requires a valid ENCRYPTION_KEY.
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:?set ENCRYPTION_KEY in .env}
+    command: alembic upgrade head
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: wealthdock-server:latest
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      db-migration:
+        condition: service_completed_successfully
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://wealthdock:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/wealthdock
+      - APP_ENV=production
+      - JWT_SECRET=${JWT_SECRET:?set JWT_SECRET in .env}
+      - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
+      - JWT_ACCESS_TOKEN_EXPIRE_MINUTES=${JWT_ACCESS_TOKEN_EXPIRE_MINUTES:-60}
+      - CORS_ORIGINS=${CORS_ORIGINS:?set CORS_ORIGINS in .env}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:?set ENCRYPTION_KEY in .env}
+    healthcheck:
+      test: [
+        "CMD",
+        "python",
+        "-c",
+        "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"
+      ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 
 volumes:
   postgres-data:

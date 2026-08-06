@@ -8,8 +8,13 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 if TYPE_CHECKING:
     EncryptionKeysType = list[str]
+    CorsOriginsType = list[str]
 else:
+    # At runtime the union keeps pydantic-settings from treating these as
+    # "complex" fields, which would make it JSON-decode the raw environment
+    # value in EnvSettingsSource before any validator runs.
     EncryptionKeysType = list[str] | str
+    CorsOriginsType = list[str] | str
 
 
 class Settings(BaseSettings):
@@ -19,7 +24,7 @@ class Settings(BaseSettings):
     local development, see `.env.example` for the full list of keys).
     """
 
-    cors_origins: list[str] = ["http://localhost:5173", "http://localhost:3000"]
+    cors_origins: CorsOriginsType = ["http://localhost:5173", "http://localhost:3000"]
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
@@ -33,10 +38,29 @@ class Settings(BaseSettings):
     jwt_secret: str = "change-me-in-production"
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 60
-
     encryption_keys: EncryptionKeysType = Field(
         validation_alias=AliasChoices("encryption_keys", "encryption_key")
     )
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def parse_cors_origins(cls, v: Any) -> list[str]:
+        """Parse CORS origins from list, JSON array string, or comma-separated string."""
+        if isinstance(v, str):
+            v_stripped = v.strip()
+            if v_stripped.startswith("[") and v_stripped.endswith("]"):
+                try:
+                    import json
+
+                    parsed = json.loads(v_stripped)
+                    if isinstance(parsed, list):
+                        return [str(item).strip() for item in parsed if str(item).strip()]
+                except Exception:
+                    pass
+            return [origin.strip() for origin in v_stripped.split(",") if origin.strip()]
+        if isinstance(v, list):
+            return [str(item).strip() for item in v if str(item).strip()]
+        raise TypeError("cors_origins must be a list or a string")
 
     @field_validator("encryption_keys", mode="before")
     @classmethod
