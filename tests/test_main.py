@@ -60,7 +60,7 @@ async def test_get_db_from_request_state() -> None:
 
             db_session._global_engine = None
 
-            fallback_generator = get_db(None)
+            fallback_generator = get_db(None)  # type: ignore[arg-type]
             await fallback_generator.__anext__()
 
             mock_create_engine.assert_called_once()

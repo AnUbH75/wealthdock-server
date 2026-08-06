@@ -18,7 +18,7 @@ def _get_global_session_factory() -> async_sessionmaker[AsyncSession]:
     return async_sessionmaker(_global_engine, expire_on_commit=False)
 
 
-async def get_db(request: Request | None = None) -> AsyncGenerator[AsyncSession, None]:
+async def get_db(request: Request = None) -> AsyncGenerator[AsyncSession, None]:  # type: ignore[assignment]
     """Yield a request-scoped async database session."""
     if request is not None and hasattr(request.app.state, "db_session_factory"):
         session_factory = request.app.state.db_session_factory
