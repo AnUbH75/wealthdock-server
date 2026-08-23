@@ -368,3 +368,33 @@ def test_encrypted_decimal_json_decryption_failure() -> None:
 
     with pytest.raises(DecryptionError):
         json_decorator.process_result_value(bad_ct, None)
+
+
+def test_encrypted_string_multibyte_utf8() -> None:
+    """Verify that EncryptedString handles multi-byte UTF-8 characters without overflow."""
+    engine = create_engine("sqlite:///:memory:", echo=False)
+    session_factory = sessionmaker(bind=engine, expire_on_commit=False)
+    BaseForTest.metadata.create_all(engine)
+
+    # A string of 255 multi-byte characters (emojis, which are 4 bytes each in UTF-8)
+    multibyte_str = "💸" * 255
+
+    # 1. Insert exactly 255 multi-byte characters
+    with session_factory() as session:
+        record = DummyFinancialRecord(
+            account_number=multibyte_str,
+            balance=Decimal("100.00"),
+            bank_credentials={"test": True},
+        )
+        session.add(record)
+        session.commit()
+        record_id = record.id
+
+    # 2. Query and verify roundtrip
+    with session_factory() as session:
+        db_record = session.execute(
+            select(DummyFinancialRecord).where(DummyFinancialRecord.id == record_id)
+        ).scalar_one()
+        assert db_record.account_number == multibyte_str
+
+    engine.dispose()
