@@ -118,3 +118,28 @@ class SyncRecord(Base):
         TZDateTime, server_default=func.now(), onupdate=func.now(), nullable=False, index=True
     )
     deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+
+class BankConnection(Base):
+    """Database model for storing external bank connections."""
+
+    __tablename__ = "bank_connections"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    provider: Mapped[str] = mapped_column(String(100), nullable=False)
+    item_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    access_token: Mapped[str] = mapped_column(EncryptedString(length=1024), nullable=False)
+    status: Mapped[str] = mapped_column(String(100), default="active", nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        TZDateTime, default=utcnow, server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        TZDateTime,
+        default=utcnow,
+        onupdate=utcnow,
+        server_default=func.now(),
+        nullable=False,
+    )
