@@ -1,6 +1,5 @@
 """Authentication endpoints for user registration and login."""
 
-import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -30,8 +29,8 @@ async def register(
 ) -> Token:
     """Register a new user account.
 
-    To defend against user enumeration, this endpoint returns a 201 Created
-    response with a non-working token when the email address is already registered.
+    If the registration request fails due to duplicate email, standardizes error handling
+    to return an HTTP 409 Conflict error with a generic message.
     """
     result = await db.execute(select(User).where(User.email == user_in.email))
     user = result.scalar_one_or_none()
@@ -39,9 +38,10 @@ async def register(
         # Perform password hashing to match timing of actual registration
         # and defend against timing attacks
         get_password_hash(user_in.password)
-        dummy_id = uuid.uuid4()
-        access_token = create_access_token(dummy_id)
-        return Token(access_token=access_token, token_type="bearer", email=user_in.email)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Registration request could not be processed",
+        )
 
     db_user = User(
         email=user_in.email,
@@ -50,13 +50,14 @@ async def register(
     db.add(db_user)
     try:
         await db.commit()
-    except IntegrityError:
+    except IntegrityError as e:
         await db.rollback()
-        # Handle race condition collision without leaking user existence
+        # Handle race condition collision
         get_password_hash(user_in.password)
-        dummy_id = uuid.uuid4()
-        access_token = create_access_token(dummy_id)
-        return Token(access_token=access_token, token_type="bearer", email=user_in.email)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Registration request could not be processed",
+        ) from e
 
     await db.refresh(db_user)
 

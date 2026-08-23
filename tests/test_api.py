@@ -131,20 +131,13 @@ async def test_auth_registration_validation() -> None:
         )
         assert res.status_code == 201
 
-        # Duplicate email registration returns 201 with dummy token to defend against enumeration
+        # Duplicate email registration returns 409 Conflict
         res = await client.post(
             "/api/v1/auth/register",
             json={"email": "dup@example.com", "password": "secure_password"},
         )
-        assert res.status_code == 201
-        dummy_token = res.json()["access_token"]
-
-        # Using dummy token fails authentication (401 Unauthorized)
-        res = await client.get(
-            "/api/v1/sync",
-            headers={"Authorization": f"Bearer {dummy_token}"},
-        )
-        assert res.status_code == 401
+        assert res.status_code == 409
+        assert res.json()["detail"] == "Registration request could not be processed"
 
 
 @pytest.mark.asyncio
