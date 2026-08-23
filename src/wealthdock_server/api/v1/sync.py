@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from wealthdock_server.api.deps import get_current_user
+from wealthdock_server.api.v1.dependencies import get_current_user
 from wealthdock_server.db.models import SyncRecord, SyncState, User
 from wealthdock_server.db.session import get_db
 from wealthdock_server.schemas.sync import (
