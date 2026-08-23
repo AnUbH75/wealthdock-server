@@ -15,10 +15,10 @@ from sqlalchemy import (
     func,
     true,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, validates
 
 from wealthdock_server.db.base import Base
-from wealthdock_server.db.encryption import EncryptedString
 
 
 class TZDateTime(TypeDecorator[datetime.datetime]):
@@ -82,17 +82,16 @@ class User(Base):
 
 
 class SyncState(Base):
-    """Stores sync payloads for a user to keep multiple devices consistent.
-
-    Uses EncryptedString so user financial data is encrypted at rest using MultiFernet.
-    """
+    """Stores sync payloads for a user to keep multiple devices consistent."""
 
     __tablename__ = "sync_states"
 
     user_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
     )
-    payload: Mapped[str] = mapped_column(EncryptedString, nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(
+        JSON().with_variant(JSONB, "postgresql"), nullable=False
+    )
     version: Mapped[int] = mapped_column(default=1, nullable=False)
     updated_at: Mapped[datetime.datetime] = mapped_column(
         TZDateTime, default=utcnow, onupdate=utcnow, nullable=False

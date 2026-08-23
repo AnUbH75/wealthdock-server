@@ -1,6 +1,8 @@
 """Tests for the cross-device synchronization API and SyncState model."""
 
 import datetime
+import gzip
+import json
 import uuid
 from collections.abc import AsyncGenerator
 from typing import cast
@@ -41,7 +43,7 @@ def test_sync_state_model_creation() -> None:
 
         sync_state = SyncState(
             user_id=user_id,
-            payload='{"assets": []}',
+            payload={"assets": []},
             version=1,
         )
         session.add(sync_state)
@@ -52,7 +54,7 @@ def test_sync_state_model_creation() -> None:
         queried = session.get(SyncState, user_id)
         assert queried is not None
         assert queried.user_id == user_id
-        assert queried.payload == '{"assets": []}'
+        assert queried.payload == {"assets": []}
         assert queried.version == 1
         assert isinstance(queried.updated_at, datetime.datetime)
 
@@ -434,3 +436,75 @@ async def test_timestamp_clamping() -> None:
         assert datetime.datetime.fromisoformat(
             changes[0]["updated_at"]
         ) <= datetime.datetime.fromisoformat(sync_point)
+
+
+@pytest.mark.asyncio
+async def test_sync_gzip_request_decompression() -> None:
+    """Verify that gzip-compressed sync request payloads are decompressed correctly."""
+    email = "user@example.com"
+    await seed_user(email)
+    token = create_token(email)
+
+    # 1. Send small payload compressed with gzip
+    small_data = {"payload": json.dumps({"assets": [{"id": "1", "value": 100}]}), "version": 0}
+    compressed_small = gzip.compress(json.dumps(small_data).encode("utf-8"))
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Encoding": "gzip",
+        "Content-Type": "application/json",
+    }
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        res = await client.post("/api/v1/sync", content=compressed_small, headers=headers)
+        assert res.status_code == 200
+        response_json = res.json()
+        assert response_json["version"] == 1
+        assert json.loads(response_json["payload"]) == {"assets": [{"id": "1", "value": 100}]}
+
+    # 2. Send large payload compressed with gzip
+    large_assets = [{"id": str(i), "value": float(i * 100)} for i in range(100)]
+    large_data = {"payload": json.dumps({"assets": large_assets}), "version": 1}
+    compressed_large = gzip.compress(json.dumps(large_data).encode("utf-8"))
+
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        res = await client.post("/api/v1/sync", content=compressed_large, headers=headers)
+        assert res.status_code == 200
+        response_json = res.json()
+        assert response_json["version"] == 2
+        assert json.loads(response_json["payload"]) == {"assets": large_assets}
+
+
+@pytest.mark.asyncio
+async def test_sync_gzip_response_compression() -> None:
+    """Verify that sync responses are compressed with gzip when client requests it."""
+    email = "user@example.com"
+    await seed_user(email)
+    token = create_token(email)
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept-Encoding": "gzip",
+    }
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # 1. Trigger sync to store a large payload in DB
+        large_assets = [{"id": str(i), "value": float(i * 100)} for i in range(100)]
+        post_data = {"payload": json.dumps({"assets": large_assets}), "version": 0}
+        post_res = await client.post("/api/v1/sync", json=post_data, headers=headers)
+        assert post_res.status_code == 200
+
+        # The POST response should be gzipped since the payload exceeds 1000 bytes
+        assert post_res.headers.get("content-encoding") == "gzip"
+        res_json = post_res.json()
+        assert res_json["version"] == 1
+        assert json.loads(res_json["payload"]) == {"assets": large_assets}
+
+        # 2. Get sync state with Accept-Encoding: gzip
+        get_res = await client.get("/api/v1/sync", headers=headers)
+        assert get_res.status_code == 200
+        assert get_res.headers.get("content-encoding") == "gzip"
+        get_json = get_res.json()
+        assert get_json["version"] == 1
+        assert json.loads(get_json["payload"]) == {"assets": large_assets}
