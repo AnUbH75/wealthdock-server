@@ -5,7 +5,7 @@ import logging
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -169,23 +169,39 @@ async def sync(
         else:
             since_time = since_time.astimezone(datetime.UTC)
 
+        if sync_req.last_seen_id is not None:
+            filter_cond = or_(
+                SyncRecord.server_updated_at > since_time,
+                and_(
+                    SyncRecord.server_updated_at == since_time,
+                    SyncRecord.id > sync_req.last_seen_id,
+                ),
+            )
+        else:
+            filter_cond = SyncRecord.server_updated_at > since_time
+
         stmt_pull = select(SyncRecord).where(
             SyncRecord.user_id == current_user.id,
-            SyncRecord.server_updated_at > since_time,
+            filter_cond,
         )
     else:
         stmt_pull = select(SyncRecord).where(SyncRecord.user_id == current_user.id)
 
-    stmt_pull = stmt_pull.order_by(SyncRecord.server_updated_at.asc()).limit(PAGE_LIMIT)
+    stmt_pull = stmt_pull.order_by(SyncRecord.server_updated_at.asc(), SyncRecord.id.asc()).limit(
+        PAGE_LIMIT
+    )
 
     result_pull = await db.execute(stmt_pull)
     db_changes = result_pull.scalars().all()
 
+    last_seen_id = None
     if len(db_changes) == PAGE_LIMIT:
-        last_item_time = db_changes[-1].server_updated_at
+        last_item = db_changes[-1]
+        last_item_time = last_item.server_updated_at
         if last_item_time.tzinfo is None:
             last_item_time = last_item_time.replace(tzinfo=datetime.UTC)
         server_sync_point = last_item_time
+        last_seen_id = last_item.id
 
     changes_to_return: list[SyncItemSchema] = []
     for item in db_changes:
@@ -203,4 +219,8 @@ async def sync(
             )
         )
 
-    return SyncResponse(sync_point=server_sync_point, changes=changes_to_return)
+    return SyncResponse(
+        sync_point=server_sync_point,
+        last_seen_id=last_seen_id,
+        changes=changes_to_return,
+    )
