@@ -41,14 +41,10 @@ async def process_changes(
     if not payload_changes:
         return
 
-    # Fetch existing records in bulk to resolve N+1 queries
-    ids = [change.id for change in payload_changes]
-    stmt = select(SyncRecord).where(
-        SyncRecord.user_id == current_user_id,
-        SyncRecord.id.in_(ids),
-    )
-    result = await db.execute(stmt)
-    existing = {record.id: record for record in result.scalars()}
+    if db.bind is not None and db.bind.dialect.name == "sqlite":
+        from sqlalchemy.dialects.sqlite import insert
+    else:
+        from sqlalchemy.dialects.postgresql import insert  # type: ignore[assignment]
 
     max_allowed_time = server_sync_point + datetime.timedelta(minutes=CLAMP_TOLERANCE_MINUTES)
 
@@ -71,32 +67,29 @@ async def process_changes(
             )
             incoming_updated_at = server_sync_point
 
-        db_record = existing.get(change.id)
-        if db_record is None:
-            new_record = SyncRecord(
-                id=change.id,
-                user_id=current_user_id,
-                type=change.type,
-                data=change.data,
-                updated_at=incoming_updated_at,
-                server_updated_at=server_sync_point,
-                deleted=change.deleted,
-            )
-            db.add(new_record)
-        else:
-            db_updated_at = db_record.updated_at
-            if db_updated_at.tzinfo is None:
-                db_updated_at = db_updated_at.replace(tzinfo=datetime.UTC)
-            else:
-                db_updated_at = db_updated_at.astimezone(datetime.UTC)
+        stmt = insert(SyncRecord).values(
+            id=change.id,
+            user_id=current_user_id,
+            type=change.type,
+            data=change.data,
+            updated_at=incoming_updated_at,
+            server_updated_at=server_sync_point,
+            deleted=change.deleted,
+        )
 
-            # Last-Write-Wins with tie-break on equality (incoming replaces stored)
-            if incoming_updated_at >= db_updated_at:
-                db_record.type = change.type
-                db_record.data = change.data
-                db_record.updated_at = incoming_updated_at
-                db_record.deleted = change.deleted
-                db_record.server_updated_at = server_sync_point
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["id", "user_id"],
+            set_={
+                "type": stmt.excluded.type,
+                "data": stmt.excluded.data,
+                "updated_at": stmt.excluded.updated_at,
+                "server_updated_at": stmt.excluded.server_updated_at,
+                "deleted": stmt.excluded.deleted,
+            },
+            where=(stmt.excluded.updated_at >= SyncRecord.updated_at),
+        )
+
+        await db.execute(stmt)
 
 
 @router.get("", response_model=SyncPayload)
@@ -165,6 +158,7 @@ async def sync(
             await db.commit()
         except IntegrityError:
             await db.rollback()
+            db.expire_all()
             await process_changes(sync_req.changes, current_user.id, db, server_sync_point)
             await db.commit()
 
