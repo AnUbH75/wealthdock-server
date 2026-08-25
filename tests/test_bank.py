@@ -277,6 +277,7 @@ async def test_receive_webhook_invalid_signatures() -> None:
 
         # 4. Plaid signature body hash mismatch
         from jose import jwt
+
         settings = get_settings()
         jwt_payload = {"request_body_sha256": "wrong-body-hash"}
         token = jwt.encode(jwt_payload, settings.plaid_webhook_secret, algorithm="HS256")

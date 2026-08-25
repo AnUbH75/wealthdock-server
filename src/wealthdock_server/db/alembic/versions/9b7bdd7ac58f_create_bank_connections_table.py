@@ -4,14 +4,15 @@ Revision ID: 9b7bdd7ac58f
 Revises: a5d1b5e3f4a0
 Create Date: 2026-08-25 14:14:28.002138
 """
+
 from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = '9b7bdd7ac58f'
-down_revision: str | None = 'a5d1b5e3f4a0'
+revision: str = "9b7bdd7ac58f"
+down_revision: str | None = "a5d1b5e3f4a0"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
