@@ -11,7 +11,7 @@ from jose import jwt  # type: ignore[import-untyped]
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from wealthdock_server.api.deps import get_current_user
+from wealthdock_server.api.v1.dependencies import get_current_user
 from wealthdock_server.core.config import get_settings
 from wealthdock_server.db.models import BankConnection, User
 from wealthdock_server.db.session import get_db
