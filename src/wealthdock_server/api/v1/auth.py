@@ -1,5 +1,6 @@
 """Authentication endpoints for user registration and login."""
 
+import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -29,8 +30,8 @@ async def register(
 ) -> Token:
     """Register a new user account.
 
-    If the registration request fails due to duplicate email, standardizes error handling
-    to return an HTTP 409 Conflict error with a generic message.
+    To defend against user enumeration, this endpoint returns a 201 Created
+    response with a dummy, invalid token when the email address is already registered.
     """
     result = await db.execute(select(User).where(User.email == user_in.email))
     user = result.scalar_one_or_none()
@@ -38,10 +39,13 @@ async def register(
         # Perform password hashing to match timing of actual registration
         # and defend against timing attacks
         get_password_hash(user_in.password)
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Registration request could not be processed",
+        dummy_id = uuid.uuid4()
+        # Sign the dummy token with an invalid secret so it cannot be authenticated
+        access_token = create_access_token(
+            dummy_id,
+            secret_key="invalid-secret-key-for-enumeration-defense-tokens",
         )
+        return Token(access_token=access_token, token_type="bearer", email=user_in.email)
 
     db_user = User(
         email=user_in.email,
@@ -50,14 +54,17 @@ async def register(
     db.add(db_user)
     try:
         await db.commit()
-    except IntegrityError as e:
+    except IntegrityError:
         await db.rollback()
-        # Handle race condition collision
+        # Handle race condition collision without leaking user existence
         get_password_hash(user_in.password)
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Registration request could not be processed",
-        ) from e
+        dummy_id = uuid.uuid4()
+        # Sign the dummy token with an invalid secret so it cannot be authenticated
+        access_token = create_access_token(
+            dummy_id,
+            secret_key="invalid-secret-key-for-enumeration-defense-tokens",
+        )
+        return Token(access_token=access_token, token_type="bearer", email=user_in.email)
 
     await db.refresh(db_user)
 

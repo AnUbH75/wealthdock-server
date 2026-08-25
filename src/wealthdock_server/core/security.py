@@ -28,7 +28,9 @@ def get_password_hash(password: str) -> str:
 
 
 def create_access_token(
-    subject: str | uuid.UUID, expires_delta: datetime.timedelta | None = None
+    subject: str | uuid.UUID,
+    expires_delta: datetime.timedelta | None = None,
+    secret_key: str | None = None,
 ) -> str:
     """Generate a JWT token for the given subject (e.g. user id or email)."""
     settings = get_settings()
@@ -39,7 +41,8 @@ def create_access_token(
             minutes=settings.jwt_access_token_expire_minutes
         )
     to_encode = {"exp": expire, "sub": str(subject)}
+    key = secret_key or settings.jwt_secret
     return cast(
         str,
-        jwt.encode(to_encode, settings.jwt_secret, algorithm=settings.jwt_algorithm),
+        jwt.encode(to_encode, key, algorithm=settings.jwt_algorithm),
     )
