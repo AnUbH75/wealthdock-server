@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from wealthdock_server.api.v1.auth import router as auth_router
+from wealthdock_server.api.v1.bank import router as bank_router
 from wealthdock_server.api.v1.sync import router as sync_router
 from wealthdock_server.core.config import get_settings
 
@@ -126,6 +127,7 @@ def create_app() -> FastAPI:
         return {"status": "ok"}
 
     app.include_router(auth_router, prefix="/api/v1/auth", tags=["auth"])
+    app.include_router(bank_router, prefix="/api/v1")
     app.include_router(sync_router, prefix="/api/v1")
 
     settings = get_settings()
