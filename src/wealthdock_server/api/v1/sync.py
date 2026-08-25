@@ -1,10 +1,15 @@
 """API router for cross-device synchronization."""
 
 import datetime
+import gzip
+import io
+import json
 import logging
+from collections.abc import Callable
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.routing import APIRoute
 from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,7 +27,58 @@ from wealthdock_server.schemas.sync import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/sync", tags=["sync"])
+
+class GzipRequest(Request):
+    """Request class that decompresses gzip payloads if the Content-Encoding is set to gzip."""
+
+    async def body(self) -> bytes:
+        """Decompress and retrieve the HTTP request body if it is gzip encoded."""
+        if not hasattr(self, "_body"):
+            body = await super().body()
+            if "gzip" in self.headers.getlist("Content-Encoding"):
+                max_size = 10 * 1024 * 1024  # 10 MB limit
+                try:
+                    with gzip.GzipFile(fileobj=io.BytesIO(body)) as f:
+                        chunks = []
+                        total_size = 0
+                        while True:
+                            chunk = f.read(65536)
+                            if not chunk:
+                                break
+                            total_size += len(chunk)
+                            if total_size > max_size:
+                                raise HTTPException(
+                                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                                    detail="Decompressed payload size exceeds maximum limit",
+                                )
+                            chunks.append(chunk)
+                        body = b"".join(chunks)
+                except HTTPException:
+                    raise
+                except (OSError, EOFError) as e:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Invalid gzip payload",
+                    ) from e
+            self._body = body
+        return self._body
+
+
+class GzipRoute(APIRoute):
+    """Route class that uses GzipRequest to handle gzipped request bodies."""
+
+    def get_route_handler(self) -> Callable[[Request], Any]:
+        """Wrap the route handler to use GzipRequest for incoming request decoding."""
+        original_route_handler = super().get_route_handler()
+
+        async def custom_route_handler(request: Request) -> Response:
+            request = GzipRequest(request.scope, request.receive)
+            return await original_route_handler(request)
+
+        return custom_route_handler
+
+
+router = APIRouter(prefix="/sync", tags=["sync"], route_class=GzipRoute)
 
 PAGE_LIMIT = 100
 CLAMP_TOLERANCE_MINUTES = 5
@@ -102,7 +158,7 @@ async def get_sync_state(
     sync_state = result.scalar_one_or_none()
     if not sync_state:
         return SyncPayload(payload=DEFAULT_SYNC_PAYLOAD, version=0)
-    return SyncPayload(payload=sync_state.payload, version=sync_state.version)
+    return SyncPayload(payload=json.dumps(sync_state.payload), version=sync_state.version)
 
 
 @router.post("", response_model=None)
@@ -125,7 +181,9 @@ async def sync(
                     status_code=status.HTTP_409_CONFLICT,
                     detail="State conflict: version mismatch. No state found, expected version 0.",
                 )
-            sync_state = SyncState(user_id=current_user.id, payload=sync_payload.payload, version=1)
+            sync_state = SyncState(
+                user_id=current_user.id, payload=json.loads(sync_payload.payload), version=1
+            )
             db.add(sync_state)
             try:
                 await db.commit()
@@ -141,12 +199,12 @@ async def sync(
                     status_code=status.HTTP_409_CONFLICT,
                     detail="State conflict: version mismatch. Please fetch latest state and merge.",
                 )
-            sync_state.payload = sync_payload.payload
+            sync_state.payload = json.loads(sync_payload.payload)
             sync_state.version += 1
             await db.commit()
 
         await db.refresh(sync_state)
-        return SyncPayload(payload=sync_state.payload, version=sync_state.version)
+        return SyncPayload(payload=json.dumps(sync_state.payload), version=sync_state.version)
 
     # Per-record LWW sync
     sync_req = SyncRequest.model_validate(payload_in)

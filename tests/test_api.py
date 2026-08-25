@@ -1,6 +1,7 @@
 """Integration tests for authentication and synchronization APIs."""
 
 import datetime
+import json
 from collections.abc import AsyncGenerator
 from typing import cast
 
@@ -81,7 +82,7 @@ async def test_happy_path_auth_and_sync() -> None:
         )
         assert post_resp.status_code == 200
         assert post_resp.json()["version"] == 1
-        assert post_resp.json()["payload"] == payload_data
+        assert json.loads(post_resp.json()["payload"]) == json.loads(payload_data)
 
 
 @pytest.mark.asyncio
