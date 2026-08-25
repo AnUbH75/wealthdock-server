@@ -1,15 +1,18 @@
-"""API router for external bank connections and webhooks."""
-
 import datetime
+import hashlib
+import hmac
+import json
 import logging
 import uuid
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from jose import jwt  # type: ignore[import-untyped]
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from wealthdock_server.api.deps import get_current_user
+from wealthdock_server.core.config import get_settings
 from wealthdock_server.db.models import BankConnection, User
 from wealthdock_server.db.session import get_db
 
@@ -99,8 +102,69 @@ async def exchange_token(
 
 @router.post("/webhooks", status_code=status.HTTP_200_OK)
 async def receive_webhook(
-    payload: dict[str, Any],
+    request: Request,
 ) -> Any:
-    """Public webhook receiver endpoint for aggregators to push updates."""
-    logger.info("Received bank webhook payload: %s", payload)
+    """Public webhook receiver endpoint for aggregators to push updates.
+
+    Verifies the webhook signature header from Plaid or GoCardless.
+    """
+    body = await request.body()
+    settings = get_settings()
+
+    plaid_verification = request.headers.get("Plaid-Verification")
+    gocardless_signature = request.headers.get("Webhook-Signature")
+
+    if not plaid_verification and not gocardless_signature:
+        logger.warning("Rejecting webhook: Missing signature header")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing webhook signature header",
+        )
+
+    if gocardless_signature:
+        # Verify GoCardless signature using HMAC-SHA256
+        secret = settings.gocardless_webhook_secret
+        computed = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(computed, gocardless_signature):
+            logger.warning("Rejecting webhook: Invalid GoCardless signature")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid GoCardless webhook signature",
+            )
+        logger.info("GoCardless webhook signature verified successfully")
+
+    elif plaid_verification:
+        # Verify Plaid webhook signature
+        # Plaid's signature is a JWT. We decode and verify it using settings.plaid_webhook_secret.
+        try:
+            payload = jwt.decode(
+                plaid_verification,
+                settings.plaid_webhook_secret,
+                algorithms=["HS256"],
+                options={"verify_aud": False},
+            )
+            # Verify body hash
+            body_hash = hashlib.sha256(body).hexdigest()
+            if payload.get("request_body_sha256") != body_hash:
+                logger.warning("Rejecting webhook: Plaid body hash mismatch")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Plaid webhook payload hash mismatch",
+                )
+        except Exception as e:
+            logger.warning("Rejecting webhook: Invalid Plaid signature: %s", e)
+            if isinstance(e, HTTPException):
+                raise
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=f"Invalid Plaid webhook signature: {e!s}",
+            ) from e
+        logger.info("Plaid webhook signature verified successfully")
+
+    try:
+        payload_data = json.loads(body) if body else {}
+    except ValueError:
+        payload_data = {}
+
+    logger.info("Received authenticated bank webhook payload: %s", payload_data)
     return {"status": "received"}

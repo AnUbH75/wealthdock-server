@@ -186,14 +186,104 @@ async def test_exchange_token() -> None:
 
 
 @pytest.mark.asyncio
-async def test_receive_webhook() -> None:
-    """Verify public webhook endpoint accepts raw payloads without auth."""
+async def test_receive_webhook_gocardless_valid() -> None:
+    """Verify that a valid GoCardless signature is accepted."""
+    import hashlib
+    import hmac
+    import json
+
+    settings = get_settings()
+    payload = {"webhook_type": "TRANSACTIONS", "item_id": "item_xyz"}
+    body_bytes = json.dumps(payload).encode("utf-8")
+
+    signature = hmac.new(
+        settings.gocardless_webhook_secret.encode("utf-8"),
+        body_bytes,
+        hashlib.sha256,
+    ).hexdigest()
+
+    headers = {"Webhook-Signature": signature}
+
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         res = await client.post(
             "/api/v1/bank/webhooks",
-            json={"webhook_type": "TRANSACTIONS", "item_id": "item_xyz"},
+            content=body_bytes,
+            headers=headers,
         )
         assert res.status_code == 200
-        data = res.json()
-        assert data == {"status": "received"}
+        assert res.json() == {"status": "received"}
+
+
+@pytest.mark.asyncio
+async def test_receive_webhook_plaid_valid() -> None:
+    """Verify that a valid Plaid signature is accepted."""
+    import hashlib
+    import json
+
+    from jose import jwt
+
+    settings = get_settings()
+    payload = {"webhook_type": "TRANSACTIONS", "item_id": "item_xyz"}
+    body_bytes = json.dumps(payload).encode("utf-8")
+    body_hash = hashlib.sha256(body_bytes).hexdigest()
+
+    jwt_payload = {"request_body_sha256": body_hash}
+    token = jwt.encode(jwt_payload, settings.plaid_webhook_secret, algorithm="HS256")
+
+    headers = {"Plaid-Verification": token}
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        res = await client.post(
+            "/api/v1/bank/webhooks",
+            content=body_bytes,
+            headers=headers,
+        )
+        assert res.status_code == 200
+        assert res.json() == {"status": "received"}
+
+
+@pytest.mark.asyncio
+async def test_receive_webhook_invalid_signatures() -> None:
+    """Verify that invalid signatures are rejected with 401 Unauthorized."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # 1. Missing signature
+        res = await client.post(
+            "/api/v1/bank/webhooks",
+            json={"webhook_type": "TRANSACTIONS"},
+        )
+        assert res.status_code == 401
+        assert "Missing webhook signature header" in res.json()["detail"]
+
+        # 2. Invalid GoCardless signature
+        res = await client.post(
+            "/api/v1/bank/webhooks",
+            json={"webhook_type": "TRANSACTIONS"},
+            headers={"Webhook-Signature": "invalid-signature"},
+        )
+        assert res.status_code == 401
+        assert "Invalid GoCardless webhook signature" in res.json()["detail"]
+
+        # 3. Invalid Plaid signature (bad JWT)
+        res = await client.post(
+            "/api/v1/bank/webhooks",
+            json={"webhook_type": "TRANSACTIONS"},
+            headers={"Plaid-Verification": "invalid-jwt-token"},
+        )
+        assert res.status_code == 401
+        assert "Invalid Plaid webhook signature" in res.json()["detail"]
+
+        # 4. Plaid signature body hash mismatch
+        from jose import jwt
+        settings = get_settings()
+        jwt_payload = {"request_body_sha256": "wrong-body-hash"}
+        token = jwt.encode(jwt_payload, settings.plaid_webhook_secret, algorithm="HS256")
+        res = await client.post(
+            "/api/v1/bank/webhooks",
+            content=b"some-payload",
+            headers={"Plaid-Verification": token},
+        )
+        assert res.status_code == 401
+        assert "Plaid webhook payload hash mismatch" in res.json()["detail"]
