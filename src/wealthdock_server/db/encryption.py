@@ -41,7 +41,11 @@ class EncryptedString(TypeDecorator[str]):
             # Sizing the column for ciphertext expansion rather than plaintext length.
             # Fernet binary overhead is 57 bytes (1 version + 8 timestamp + 16 IV + 32 HMAC).
             # AES block size is 16 bytes, PKCS7 padding adds between 1 and 16 bytes.
-            padded_len = ((length // 16) + 1) * 16
+            # We calculate padded_len based on max theoretical UTF-8 byte
+            # expansion (length * 4 bytes) to handle multi-byte characters
+            # like emojis and special currency symbols.
+            max_bytes = length * 4
+            padded_len = ((max_bytes // 16) + 1) * 16
             binary_len = 57 + padded_len
             # Base64url encoding turns N bytes into ceil(N / 3) * 4 bytes.
             ciphertext_length = ((binary_len + 2) // 3) * 4

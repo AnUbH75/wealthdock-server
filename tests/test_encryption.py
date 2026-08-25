@@ -368,3 +368,51 @@ def test_encrypted_decimal_json_decryption_failure() -> None:
 
     with pytest.raises(DecryptionError):
         json_decorator.process_result_value(bad_ct, None)
+
+
+def test_encrypted_string_multibyte_utf8() -> None:
+    """Verify that EncryptedString handles multi-byte UTF-8 characters without overflow."""
+    # 1. Verify the computed column length on the SQLAlchemy type directly.
+    # Plaintext length 255 with max 4 bytes/char (1020 bytes) -> ciphertext length 1444.
+    # The old buggy formula resulted in a length of 420.
+    column_type = DummyFinancialRecord.__table__.c.account_number.type
+    assert isinstance(column_type, EncryptedString)
+    # mypy thinks column_type.impl is the class object String rather than the instance
+    assert column_type.impl.length == 1444  # type: ignore[misc]
+
+    engine = create_engine("sqlite:///:memory:", echo=False)
+    session_factory = sessionmaker(bind=engine, expire_on_commit=False)
+    BaseForTest.metadata.create_all(engine)
+
+    # A string of 255 multi-byte characters (emojis, which are 4 bytes each in UTF-8)
+    multibyte_str = "💸" * 255
+
+    # 2. Insert exactly 255 multi-byte characters
+    with session_factory() as session:
+        record = DummyFinancialRecord(
+            account_number=multibyte_str,
+            balance=Decimal("100.00"),
+            bank_credentials={"test": True},
+        )
+        session.add(record)
+        session.commit()
+        record_id = record.id
+
+    # 3. Query and verify roundtrip
+    with session_factory() as session:
+        db_record = session.execute(
+            select(DummyFinancialRecord).where(DummyFinancialRecord.id == record_id)
+        ).scalar_one()
+        assert db_record.account_number == multibyte_str
+
+    # 4. Verify raw ciphertext stored in the database is indeed longer than the old limit (420)
+    # and matches the exact ciphertext length (1444).
+    with session_factory() as session:
+        raw_ciphertext = session.execute(
+            text("select account_number from dummy_financial_records where id = :id"),
+            {"id": record_id},
+        ).scalar_one()
+        assert len(raw_ciphertext) == 1444
+        assert len(raw_ciphertext) > 420
+
+    engine.dispose()
