@@ -18,7 +18,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, validates
 
 from wealthdock_server.db.base import Base
-from wealthdock_server.db.encryption import EncryptedJSON
+from wealthdock_server.db.encryption import EncryptedJSON, EncryptedString
 
 
 class TZDateTime(TypeDecorator[datetime.datetime]):
