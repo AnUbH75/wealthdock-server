@@ -434,3 +434,146 @@ async def test_timestamp_clamping() -> None:
         assert datetime.datetime.fromisoformat(
             changes[0]["updated_at"]
         ) <= datetime.datetime.fromisoformat(sync_point)
+
+
+@pytest.mark.asyncio
+async def test_sync_keyset_pagination() -> None:
+    """Verify keyset pagination works correctly for records with identical server_updated_at."""
+    from unittest.mock import patch
+
+    import wealthdock_server.api.v1.sync
+
+    email = "user@example.com"
+    await seed_user(email)
+    token = create_token(email)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    base_time = datetime.datetime.now(datetime.UTC)
+    t1 = (base_time - datetime.timedelta(hours=3)).isoformat()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # 1. Upload 3 records in a single request. They will have the exact same server_updated_at.
+        changes_in = [
+            {"id": "item-a", "type": "asset", "data": {}, "updated_at": t1, "deleted": False},
+            {"id": "item-b", "type": "asset", "data": {}, "updated_at": t1, "deleted": False},
+            {"id": "item-c", "type": "asset", "data": {}, "updated_at": t1, "deleted": False},
+        ]
+        res = await client.post(
+            "/api/v1/sync",
+            json={"since": None, "changes": changes_in},
+            headers=headers,
+        )
+        assert res.status_code == 200
+
+        # 2. Pull with PAGE_LIMIT overridden to 2
+        with patch.object(wealthdock_server.api.v1.sync, "PAGE_LIMIT", 2):
+            res_page1 = await client.post(
+                "/api/v1/sync",
+                json={"since": None, "changes": []},
+                headers=headers,
+            )
+            assert res_page1.status_code == 200
+            data1 = res_page1.json()
+            assert len(data1["changes"]) == 2
+            # Keyset pagination should sort by ID, so item-a and item-b should be returned
+            ids1 = [c["id"] for c in data1["changes"]]
+            assert ids1 == ["item-a", "item-b"]
+            assert data1["last_seen_id"] == "item-b"
+
+            # 3. Pull page 2 using the composite cursor (sync_point + last_seen_id)
+            res_page2 = await client.post(
+                "/api/v1/sync",
+                json={
+                    "since": data1["sync_point"],
+                    "last_seen_id": data1["last_seen_id"],
+                    "changes": [],
+                },
+                headers=headers,
+            )
+            assert res_page2.status_code == 200
+            data2 = res_page2.json()
+            assert len(data2["changes"]) == 1
+            assert data2["changes"][0]["id"] == "item-c"
+            assert data2["last_seen_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_sync_database_upsert_lww() -> None:
+    """Verify that database-level upserts resolve conflicts correctly using LWW."""
+    email = "user@example.com"
+    await seed_user(email)
+    token = create_token(email)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    base_time = datetime.datetime.now(datetime.UTC)
+    t1 = (base_time - datetime.timedelta(hours=3)).isoformat()
+    t2 = (base_time - datetime.timedelta(hours=2)).isoformat()
+    t3 = (base_time - datetime.timedelta(hours=4)).isoformat()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # 1. Insert record initially
+        item1 = {
+            "id": "upsert-1",
+            "type": "asset",
+            "data": {"value": 10},
+            "updated_at": t1,
+            "deleted": False,
+        }
+        res1 = await client.post(
+            "/api/v1/sync",
+            json={"since": None, "changes": [item1]},
+            headers=headers,
+        )
+        assert res1.status_code == 200
+
+        # 2. Update with newer timestamp (should succeed)
+        item2 = {
+            "id": "upsert-1",
+            "type": "asset",
+            "data": {"value": 20},
+            "updated_at": t2,
+            "deleted": False,
+        }
+        res2 = await client.post(
+            "/api/v1/sync",
+            json={"since": None, "changes": [item2]},
+            headers=headers,
+        )
+        assert res2.status_code == 200
+
+        # 3. Pull changes and verify value is updated to 20
+        res_pull1 = await client.post(
+            "/api/v1/sync",
+            json={"since": None, "changes": []},
+            headers=headers,
+        )
+        changes = res_pull1.json()["changes"]
+        assert len(changes) == 1
+        assert changes[0]["data"] == {"value": 20}
+
+        # 4. Attempt update with older timestamp (should NOT update)
+        item3 = {
+            "id": "upsert-1",
+            "type": "asset",
+            "data": {"value": 5},
+            "updated_at": t3,
+            "deleted": False,
+        }
+        res3 = await client.post(
+            "/api/v1/sync",
+            json={"since": None, "changes": [item3]},
+            headers=headers,
+        )
+        assert res3.status_code == 200
+
+        # 5. Pull changes and verify value remains 20 (LWW)
+        res_pull2 = await client.post(
+            "/api/v1/sync",
+            json={"since": None, "changes": []},
+            headers=headers,
+        )
+        changes2 = res_pull2.json()["changes"]
+        assert len(changes2) == 1
+        assert changes2[0]["data"] == {"value": 20}

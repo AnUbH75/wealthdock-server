@@ -58,6 +58,9 @@ class SyncRequest(BaseModel):
     since: datetime.datetime | None = Field(
         None, description="The client's last sync point. Returns changes modified after this."
     )
+    last_seen_id: str | None = Field(
+        None, description="The ID of the last seen record in keyset pagination."
+    )
     changes: list[SyncItemSchema] = Field(
         default_factory=list,
         max_length=500,
@@ -70,6 +73,9 @@ class SyncResponse(BaseModel):
 
     sync_point: datetime.datetime = Field(
         ..., description="The server's current timestamp to use as 'since' in the next sync."
+    )
+    last_seen_id: str | None = Field(
+        None, description="The ID of the last seen record, used for keyset pagination."
     )
     changes: list[SyncItemSchema] = Field(
         ..., description="A list of items modified since the client's last sync point."
