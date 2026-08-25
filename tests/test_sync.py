@@ -655,7 +655,7 @@ async def test_sync_gzip_response_compression() -> None:
 
 @pytest.mark.asyncio
 async def test_sync_gzip_decompression_limit() -> None:
-    """Verify that gzip-compressed sync request payloads exceeding the limit are rejected with 413."""
+    """Verify that gzip-compressed sync payloads exceeding the limit are rejected with 413."""
     email = "user@example.com"
     await seed_user(email)
     token = create_token(email)

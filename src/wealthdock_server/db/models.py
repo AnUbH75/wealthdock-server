@@ -15,11 +15,10 @@ from sqlalchemy import (
     func,
     true,
 )
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, validates
 
 from wealthdock_server.db.base import Base
-from wealthdock_server.db.encryption import EncryptedJSON, EncryptedString
+from wealthdock_server.db.encryption import EncryptedJSON
 
 
 class TZDateTime(TypeDecorator[datetime.datetime]):
