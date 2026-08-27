@@ -48,6 +48,7 @@ def create_app() -> FastAPI:
 
     app.include_router(auth_router, prefix="/api/v1/auth", tags=["auth"])
     app.include_router(sync_router, prefix="/api/v1")
+    app.include_router(market_data.router, prefix="/api/v1")
 
     settings = get_settings()
     app.add_middleware(
