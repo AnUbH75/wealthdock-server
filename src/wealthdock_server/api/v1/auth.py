@@ -31,7 +31,7 @@ async def register(
     """Register a new user account.
 
     To defend against user enumeration, this endpoint returns a 201 Created
-    response with a non-working token when the email address is already registered.
+    response with a dummy, invalid token when the email address is already registered.
     """
     result = await db.execute(select(User).where(User.email == user_in.email))
     user = result.scalar_one_or_none()
@@ -40,7 +40,11 @@ async def register(
         # and defend against timing attacks
         get_password_hash(user_in.password)
         dummy_id = uuid.uuid4()
-        access_token = create_access_token(dummy_id)
+        # Sign the dummy token with an invalid secret so it cannot be authenticated
+        access_token = create_access_token(
+            dummy_id,
+            secret_key="invalid-secret-key-for-enumeration-defense-tokens",
+        )
         return Token(access_token=access_token, token_type="bearer", email=user_in.email)
 
     db_user = User(
@@ -55,7 +59,11 @@ async def register(
         # Handle race condition collision without leaking user existence
         get_password_hash(user_in.password)
         dummy_id = uuid.uuid4()
-        access_token = create_access_token(dummy_id)
+        # Sign the dummy token with an invalid secret so it cannot be authenticated
+        access_token = create_access_token(
+            dummy_id,
+            secret_key="invalid-secret-key-for-enumeration-defense-tokens",
+        )
         return Token(access_token=access_token, token_type="bearer", email=user_in.email)
 
     await db.refresh(db_user)

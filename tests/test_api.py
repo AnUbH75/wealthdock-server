@@ -1,6 +1,7 @@
 """Integration tests for authentication and synchronization APIs."""
 
 import datetime
+import json
 from collections.abc import AsyncGenerator
 from typing import cast
 
@@ -81,7 +82,7 @@ async def test_happy_path_auth_and_sync() -> None:
         )
         assert post_resp.status_code == 200
         assert post_resp.json()["version"] == 1
-        assert post_resp.json()["payload"] == payload_data
+        assert json.loads(post_resp.json()["payload"]) == json.loads(payload_data)
 
 
 @pytest.mark.asyncio
@@ -297,3 +298,64 @@ async def test_user_data_isolation() -> None:
         data = res.json()
         assert data["version"] == 0
         assert "a1" not in data["payload"]
+
+
+@pytest.mark.asyncio
+async def test_rfc7807_error_handling() -> None:
+    """Verify that HTTPExceptions, validation errors, and crashes conform to RFC 7807."""
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # 1. Validation Error (RequestValidationError)
+        res = await client.post(
+            "/api/v1/auth/register",
+            json={"email": "not-an-email", "password": "short"},
+        )
+        assert res.status_code == 422
+        assert res.headers["content-type"] == "application/problem+json"
+
+        data = res.json()
+        assert data["type"] == "validation-error"
+        assert data["title"] == "Validation Error"
+        assert data["status"] == 422
+        assert data["detail"] == "The request contains invalid data."
+        assert data["instance"] == "/api/v1/auth/register"
+        assert isinstance(data["errors"], list)
+        assert len(data["errors"]) > 0
+        for err in data["errors"]:
+            assert "loc" in err
+            assert "msg" in err
+            assert "type" in err
+
+        # 2. HTTPException (401 Unauthorized)
+        res = await client.post(
+            "/api/v1/auth/login",
+            json={"email": "nonexistent@example.com", "password": "wrongpassword"},
+        )
+        assert res.status_code == 401
+        assert res.headers["content-type"] == "application/problem+json"
+
+        data = res.json()
+        assert data["type"] == "about:blank"
+        assert data["title"] == "Unauthorized"
+        assert data["status"] == 401
+        assert data["detail"] == "Incorrect email or password"
+        assert data["instance"] == "/api/v1/auth/login"
+
+        # 3. Generic Exception / Server Crash (500 Internal Server Error)
+        # Register a temporary test route that raises a generic exception
+        @app.get("/api/v1/test-internal-error")
+        async def trigger_error() -> None:
+            raise RuntimeError("Database connection crashed")
+
+        res = await client.get("/api/v1/test-internal-error")
+        assert res.status_code == 500
+        assert res.headers["content-type"] == "application/problem+json"
+
+        data = res.json()
+        assert data["type"] == "about:blank"
+        assert data["title"] == "Internal Server Error"
+        assert data["status"] == 500
+        assert data["detail"] == "An unexpected error occurred on the server."
+        assert data["instance"] == "/api/v1/test-internal-error"
+        assert "crashed" not in data["detail"]
+        assert "Database" not in data["detail"]
