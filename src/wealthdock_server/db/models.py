@@ -119,6 +119,7 @@ class SyncRecord(Base):
     )
     deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
+
 class QuoteCache(Base):
     """TTL-based cache for market data quotes to reduce provider API calls.
 
@@ -135,6 +136,7 @@ class QuoteCache(Base):
     fetched_at: Mapped[datetime.datetime] = mapped_column(
         TZDateTime, default=utcnow, server_default=func.now(), nullable=False
     )
+
 
 class BankConnection(Base):
     """Database model for storing external bank connections."""

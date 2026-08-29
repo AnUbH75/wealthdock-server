@@ -25,9 +25,7 @@ async def get_cached_quote(db: AsyncSession, symbol: str) -> float | None:
     return row.price
 
 
-async def upsert_quote_cache(
-    db: AsyncSession, symbol: str, asset_class: str, price: float
-) -> None:
+async def upsert_quote_cache(db: AsyncSession, symbol: str, asset_class: str, price: float) -> None:
     """Insert or update the cached price for `symbol`."""
     stmt = insert(QuoteCache).values(
         symbol=symbol,
