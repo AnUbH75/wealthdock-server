@@ -15,6 +15,19 @@ COINGECKO_ID_MAP: dict[str, str] = {
     "BTC": "bitcoin",
     "ETH": "ethereum",
     "SOL": "solana",
+    "DOGE": "dogecoin",
+    "ADA": "cardano",
+    "XRP": "ripple",
+    "BNB": "binancecoin",
+    "MATIC": "matic-network",
+    "DOT": "polkadot",
+    "LTC": "litecoin",
+    "AVAX": "avalanche-2",
+    "LINK": "chainlink",
+    "UNI": "uniswap",
+    "ATOM": "cosmos",
+    "USDT": "tether",
+    "USDC": "usd-coin",
 }
 
 
