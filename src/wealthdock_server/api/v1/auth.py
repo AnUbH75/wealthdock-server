@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.wealthdock_server.core.security import (
+from wealthdock_server.core.security import (
     create_access_token,
     get_password_hash,
     verify_password,

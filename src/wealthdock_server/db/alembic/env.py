@@ -13,7 +13,7 @@ from wealthdock_server.db.base import Base
 # Import model modules here so they register on Base.metadata before
 # Alembic's autogenerate inspects it, e.g.:
 #   from wealthdock_server.accounts.models import Account  # noqa: ERA001
-from src.wealthdock_server.db.models import (
+from wealthdock_server.db.models import (
     SyncRecord,  # noqa: F401
     User,  # noqa: F401
 )
