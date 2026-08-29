@@ -1,6 +1,8 @@
 """Tests for the cross-device synchronization API and SyncState model."""
 
 import datetime
+import gzip
+import json
 import uuid
 from collections.abc import AsyncGenerator
 from typing import cast
@@ -41,7 +43,7 @@ def test_sync_state_model_creation() -> None:
 
         sync_state = SyncState(
             user_id=user_id,
-            payload='{"assets": []}',
+            payload={"assets": []},
             version=1,
         )
         session.add(sync_state)
@@ -52,7 +54,7 @@ def test_sync_state_model_creation() -> None:
         queried = session.get(SyncState, user_id)
         assert queried is not None
         assert queried.user_id == user_id
-        assert queried.payload == '{"assets": []}'
+        assert queried.payload == {"assets": []}
         assert queried.version == 1
         assert isinstance(queried.updated_at, datetime.datetime)
 
@@ -434,3 +436,262 @@ async def test_timestamp_clamping() -> None:
         assert datetime.datetime.fromisoformat(
             changes[0]["updated_at"]
         ) <= datetime.datetime.fromisoformat(sync_point)
+
+
+@pytest.mark.asyncio
+async def test_sync_keyset_pagination() -> None:
+    """Verify keyset pagination works correctly for records with identical server_updated_at."""
+    from unittest.mock import patch
+
+    import wealthdock_server.api.v1.sync
+
+    email = "user@example.com"
+    await seed_user(email)
+    token = create_token(email)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    base_time = datetime.datetime.now(datetime.UTC)
+    t1 = (base_time - datetime.timedelta(hours=3)).isoformat()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # 1. Upload 3 records in a single request. They will have the exact same server_updated_at.
+        changes_in = [
+            {"id": "item-a", "type": "asset", "data": {}, "updated_at": t1, "deleted": False},
+            {"id": "item-b", "type": "asset", "data": {}, "updated_at": t1, "deleted": False},
+            {"id": "item-c", "type": "asset", "data": {}, "updated_at": t1, "deleted": False},
+        ]
+        res = await client.post(
+            "/api/v1/sync",
+            json={"since": None, "changes": changes_in},
+            headers=headers,
+        )
+        assert res.status_code == 200
+
+        # 2. Pull with PAGE_LIMIT overridden to 2
+        with patch.object(wealthdock_server.api.v1.sync, "PAGE_LIMIT", 2):
+            res_page1 = await client.post(
+                "/api/v1/sync",
+                json={"since": None, "changes": []},
+                headers=headers,
+            )
+            assert res_page1.status_code == 200
+            data1 = res_page1.json()
+            assert len(data1["changes"]) == 2
+            # Keyset pagination should sort by ID, so item-a and item-b should be returned
+            ids1 = [c["id"] for c in data1["changes"]]
+            assert ids1 == ["item-a", "item-b"]
+            assert data1["last_seen_id"] == "item-b"
+
+            # 3. Pull page 2 using the composite cursor (sync_point + last_seen_id)
+            res_page2 = await client.post(
+                "/api/v1/sync",
+                json={
+                    "since": data1["sync_point"],
+                    "last_seen_id": data1["last_seen_id"],
+                    "changes": [],
+                },
+                headers=headers,
+            )
+            assert res_page2.status_code == 200
+            data2 = res_page2.json()
+            assert len(data2["changes"]) == 1
+            assert data2["changes"][0]["id"] == "item-c"
+            assert data2["last_seen_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_sync_database_upsert_lww() -> None:
+    """Verify that database-level upserts resolve conflicts correctly using LWW."""
+    email = "user@example.com"
+    await seed_user(email)
+    token = create_token(email)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    base_time = datetime.datetime.now(datetime.UTC)
+    t1 = (base_time - datetime.timedelta(hours=3)).isoformat()
+    t2 = (base_time - datetime.timedelta(hours=2)).isoformat()
+    t3 = (base_time - datetime.timedelta(hours=4)).isoformat()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # 1. Insert record initially
+        item1 = {
+            "id": "upsert-1",
+            "type": "asset",
+            "data": {"value": 10},
+            "updated_at": t1,
+            "deleted": False,
+        }
+        res1 = await client.post(
+            "/api/v1/sync",
+            json={"since": None, "changes": [item1]},
+            headers=headers,
+        )
+        assert res1.status_code == 200
+
+        # 2. Update with newer timestamp (should succeed)
+        item2 = {
+            "id": "upsert-1",
+            "type": "asset",
+            "data": {"value": 20},
+            "updated_at": t2,
+            "deleted": False,
+        }
+        res2 = await client.post(
+            "/api/v1/sync",
+            json={"since": None, "changes": [item2]},
+            headers=headers,
+        )
+        assert res2.status_code == 200
+
+        # 3. Pull changes and verify value is updated to 20
+        res_pull1 = await client.post(
+            "/api/v1/sync",
+            json={"since": None, "changes": []},
+            headers=headers,
+        )
+        changes = res_pull1.json()["changes"]
+        assert len(changes) == 1
+        assert changes[0]["data"] == {"value": 20}
+
+        # 4. Attempt update with older timestamp (should NOT update)
+        item3 = {
+            "id": "upsert-1",
+            "type": "asset",
+            "data": {"value": 5},
+            "updated_at": t3,
+            "deleted": False,
+        }
+        res3 = await client.post(
+            "/api/v1/sync",
+            json={"since": None, "changes": [item3]},
+            headers=headers,
+        )
+        assert res3.status_code == 200
+
+        # 5. Pull changes and verify value remains 20 (LWW)
+        res_pull2 = await client.post(
+            "/api/v1/sync",
+            json={"since": None, "changes": []},
+            headers=headers,
+        )
+        changes2 = res_pull2.json()["changes"]
+        assert len(changes2) == 1
+        assert changes2[0]["data"] == {"value": 20}
+
+
+@pytest.mark.asyncio
+async def test_sync_gzip_request_decompression() -> None:
+    """Verify that gzip-compressed sync request payloads are decompressed correctly."""
+    email = "user@example.com"
+    await seed_user(email)
+    token = create_token(email)
+
+    # 1. Send small payload compressed with gzip
+    small_data = {"payload": json.dumps({"assets": [{"id": "1", "value": 100}]}), "version": 0}
+    compressed_small = gzip.compress(json.dumps(small_data).encode("utf-8"))
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Encoding": "gzip",
+        "Content-Type": "application/json",
+    }
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        res = await client.post("/api/v1/sync", content=compressed_small, headers=headers)
+        assert res.status_code == 200
+        response_json = res.json()
+        assert response_json["version"] == 1
+        assert json.loads(response_json["payload"]) == {"assets": [{"id": "1", "value": 100}]}
+
+    # 2. Send large payload compressed with gzip
+    large_assets = [{"id": str(i), "value": float(i * 100)} for i in range(100)]
+    large_data = {"payload": json.dumps({"assets": large_assets}), "version": 1}
+    compressed_large = gzip.compress(json.dumps(large_data).encode("utf-8"))
+
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        res = await client.post("/api/v1/sync", content=compressed_large, headers=headers)
+        assert res.status_code == 200
+        response_json = res.json()
+        assert response_json["version"] == 2
+        assert json.loads(response_json["payload"]) == {"assets": large_assets}
+
+
+@pytest.mark.asyncio
+async def test_sync_gzip_response_compression() -> None:
+    """Verify that sync responses are compressed with gzip when client requests it."""
+    email = "user@example.com"
+    await seed_user(email)
+    token = create_token(email)
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept-Encoding": "gzip",
+    }
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # 1. Trigger sync to store a large payload in DB
+        large_assets = [{"id": str(i), "value": float(i * 100)} for i in range(100)]
+        post_data = {"payload": json.dumps({"assets": large_assets}), "version": 0}
+        post_res = await client.post("/api/v1/sync", json=post_data, headers=headers)
+        assert post_res.status_code == 200
+
+        # The POST response should be gzipped since the payload exceeds 1000 bytes
+        assert post_res.headers.get("content-encoding") == "gzip"
+        res_json = post_res.json()
+        assert res_json["version"] == 1
+        assert json.loads(res_json["payload"]) == {"assets": large_assets}
+
+        # 2. Get sync state with Accept-Encoding: gzip
+        get_res = await client.get("/api/v1/sync", headers=headers)
+        assert get_res.status_code == 200
+        assert get_res.headers.get("content-encoding") == "gzip"
+        get_json = get_res.json()
+        assert get_json["version"] == 1
+        assert json.loads(get_json["payload"]) == {"assets": large_assets}
+
+
+@pytest.mark.asyncio
+async def test_sync_gzip_decompression_limit() -> None:
+    """Verify that gzip-compressed sync payloads exceeding the limit are rejected with 413."""
+    email = "user@example.com"
+    await seed_user(email)
+    token = create_token(email)
+
+    # 10MB + 1 byte of data
+    huge_data = b"a" * (10 * 1024 * 1024 + 1)
+    compressed_huge = gzip.compress(huge_data)
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Encoding": "gzip",
+        "Content-Type": "application/json",
+    }
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        res = await client.post("/api/v1/sync", content=compressed_huge, headers=headers)
+        assert res.status_code == 413
+        assert "exceeds maximum limit" in res.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_sync_gzip_decompression_invalid() -> None:
+    """Verify that invalid/malformed gzip payloads are rejected with 400 Bad Request."""
+    email = "user@example.com"
+    await seed_user(email)
+    token = create_token(email)
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Encoding": "gzip",
+        "Content-Type": "application/json",
+    }
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        res = await client.post("/api/v1/sync", content=b"invalid-gzip-payload", headers=headers)
+        assert res.status_code == 400
+        assert "Invalid gzip payload" in res.json()["detail"]

@@ -40,6 +40,8 @@ class Settings(BaseSettings):
     jwt_secret: str = "change-me-in-production"
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 60
+    gocardless_webhook_secret: str = "gocardless-webhook-secret"
+    plaid_webhook_secret: str = "plaid-webhook-secret"
     encryption_keys: EncryptionKeysType = Field(
         validation_alias=AliasChoices("encryption_keys", "encryption_key")
     )

@@ -18,7 +18,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, validates
 
 from wealthdock_server.db.base import Base
-from wealthdock_server.db.encryption import EncryptedString
+from wealthdock_server.db.encryption import EncryptedJSON, EncryptedString
 
 
 class TZDateTime(TypeDecorator[datetime.datetime]):
@@ -84,7 +84,7 @@ class User(Base):
 class SyncState(Base):
     """Stores sync payloads for a user to keep multiple devices consistent.
 
-    Uses EncryptedString so user financial data is encrypted at rest using MultiFernet.
+    Uses EncryptedJSON so user financial data is encrypted at rest using MultiFernet.
     """
 
     __tablename__ = "sync_states"
@@ -92,7 +92,7 @@ class SyncState(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
     )
-    payload: Mapped[str] = mapped_column(EncryptedString, nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(EncryptedJSON, nullable=False)
     version: Mapped[int] = mapped_column(default=1, nullable=False)
     updated_at: Mapped[datetime.datetime] = mapped_column(
         TZDateTime, default=utcnow, onupdate=utcnow, nullable=False
@@ -134,4 +134,28 @@ class QuoteCache(Base):
     price: Mapped[float] = mapped_column(nullable=False)
     fetched_at: Mapped[datetime.datetime] = mapped_column(
         TZDateTime, default=utcnow, server_default=func.now(), nullable=False
+    )
+
+class BankConnection(Base):
+    """Database model for storing external bank connections."""
+
+    __tablename__ = "bank_connections"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    provider: Mapped[str] = mapped_column(String(100), nullable=False)
+    item_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    access_token: Mapped[str] = mapped_column(EncryptedString(length=1024), nullable=False)
+    status: Mapped[str] = mapped_column(String(100), default="active", nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        TZDateTime, default=utcnow, server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        TZDateTime,
+        default=utcnow,
+        onupdate=utcnow,
+        server_default=func.now(),
+        nullable=False,
     )
