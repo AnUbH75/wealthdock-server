@@ -8,14 +8,14 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from wealthdock_server.core.security import (
+from src.wealthdock_server.core.security import (
     create_access_token,
     get_password_hash,
     verify_password,
 )
-from wealthdock_server.db.models import User
-from wealthdock_server.db.session import get_db
-from wealthdock_server.schemas.auth import Token, UserLogin, UserRegister
+from src.wealthdock_server.db.models import User
+from src.wealthdock_server.db.session import get_db
+from src.wealthdock_server.schemas.auth import Token, UserLogin, UserRegister
 
 router = APIRouter()
 

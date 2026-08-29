@@ -8,7 +8,7 @@ from typing import cast
 import bcrypt
 from jose import jwt  # type: ignore[import-untyped]
 
-from wealthdock_server.core.config import get_settings
+from src.wealthdock_server.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 

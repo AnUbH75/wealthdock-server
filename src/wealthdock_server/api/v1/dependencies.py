@@ -8,9 +8,9 @@ from jose import JWTError, jwt  # type: ignore[import-untyped]
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from wealthdock_server.core.config import get_settings
-from wealthdock_server.db.models import User
-from wealthdock_server.db.session import get_db
+from src.wealthdock_server.core.config import get_settings
+from src.wealthdock_server.db.models import User
+from src.wealthdock_server.db.session import get_db
 
 # Token endpoint path for OAuth2PasswordBearer
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/v1/auth/token", auto_error=False)

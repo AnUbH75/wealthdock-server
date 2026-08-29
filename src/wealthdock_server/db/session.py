@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-from wealthdock_server.core.config import get_settings
+from src.wealthdock_server.core.config import get_settings
 
 # Global engine and session factory for non-app contexts (CLI, standalone scripts)
 _global_engine: AsyncEngine | None = None

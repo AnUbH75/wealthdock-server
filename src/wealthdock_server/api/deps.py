@@ -9,9 +9,9 @@ from jose import JWTError, jwt  # type: ignore[import-untyped]
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from wealthdock_server.core.config import get_settings
-from wealthdock_server.db.models import User
-from wealthdock_server.db.session import get_db
+from src.wealthdock_server.core.config import get_settings
+from src.wealthdock_server.db.models import User
+from src.wealthdock_server.db.session import get_db
 
 reusable_oauth2 = HTTPBearer()
 
