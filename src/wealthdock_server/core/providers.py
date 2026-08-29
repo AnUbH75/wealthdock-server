@@ -2,7 +2,7 @@
 
 import httpx
 
-from src.wealthdock_server.core.config import get_settings
+from wealthdock_server.core.config import get_settings
 
 
 class QuoteNotFoundError(Exception):

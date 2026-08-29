@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.wealthdock_server.db.models import QuoteCache, utcnow
+from wealthdock_server.db.models import QuoteCache, utcnow
 
 CACHE_TTL_MINUTES = 10
 

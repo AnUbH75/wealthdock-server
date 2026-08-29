@@ -13,9 +13,9 @@ from src.wealthdock_server.core.security import (
     get_password_hash,
     verify_password,
 )
-from src.wealthdock_server.db.models import User
-from src.wealthdock_server.db.session import get_db
-from src.wealthdock_server.schemas.auth import Token, UserLogin, UserRegister
+from wealthdock_server.db.models import User
+from wealthdock_server.db.session import get_db
+from wealthdock_server.schemas.auth import Token, UserLogin, UserRegister
 
 router = APIRouter()
 

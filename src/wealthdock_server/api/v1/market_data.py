@@ -6,15 +6,15 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.wealthdock_server.api.deps import get_current_user
-from src.wealthdock_server.core.providers import (
+from wealthdock_server.api.v1.dependencies import get_current_user
+from wealthdock_server.core.providers import (
     QuoteNotFoundError,
     fetch_coingecko_price,
     fetch_finnhub_quote,
 )
-from src.wealthdock_server.db.models import User
-from src.wealthdock_server.db.quote_cache import get_cached_quote, upsert_quote_cache
-from src.wealthdock_server.db.session import get_db
+from wealthdock_server.db.models import User
+from wealthdock_server.db.quote_cache import get_cached_quote, upsert_quote_cache
+from wealthdock_server.db.session import get_db
 
 router = APIRouter(prefix="/market-data", tags=["market-data"])
 
