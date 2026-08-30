@@ -172,3 +172,23 @@ async def test_different_symbols_cached_independently() -> None:
             assert res.json()["price"] == 411.20
 
             assert mock_finnhub.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_provider_failure_returns_503_not_500() -> None:
+    """Verify a provider timeout/connection/HTTP error returns a clean 503, not an unhandled 500."""
+    from wealthdock_server.core.providers import QuoteProviderError
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        headers = await _get_auth_headers(client)
+
+        with patch(FINNHUB_PATCH_TARGET, new_callable=AsyncMock) as mock_finnhub:
+            mock_finnhub.side_effect = QuoteProviderError("Finnhub request timed out")
+
+            res = await client.get(
+                "/api/v1/market-data/quote",
+                params={"symbol": "AAPL", "asset_class": "stock"},
+                headers=headers,
+            )
+            assert res.status_code == 503

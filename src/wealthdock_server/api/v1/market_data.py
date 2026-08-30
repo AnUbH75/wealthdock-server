@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from wealthdock_server.api.v1.dependencies import get_current_user
 from wealthdock_server.core.providers import (
     QuoteNotFoundError,
+    QuoteProviderError,
     fetch_coingecko_price,
     fetch_finnhub_quote,
 )
@@ -53,6 +54,11 @@ async def get_quote(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"No quote found for symbol '{symbol}'",
+        ) from e
+    except QuoteProviderError as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Market data provider unavailable for '{symbol}'",
         ) from e
 
     await upsert_quote_cache(db, symbol, asset_class, price)

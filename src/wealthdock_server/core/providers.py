@@ -9,8 +9,10 @@ class QuoteNotFoundError(Exception):
     """Raised when a provider has no data for the requested symbol."""
 
 
-# Minimal ticker -> CoinGecko coin-id map. Expand as needed; CoinGecko uses
-# ids like "bitcoin", not tickers like "BTC".
+class QuoteProviderError(Exception):
+    """Raised when a provider is unreachable or returns an unexpected error."""
+
+
 COINGECKO_ID_MAP: dict[str, str] = {
     "BTC": "bitcoin",
     "ETH": "ethereum",
@@ -37,14 +39,17 @@ async def fetch_finnhub_quote(symbol: str) -> float:
     if not settings.finnhub_api_key:
         raise RuntimeError("FINNHUB_API_KEY is not configured.")
 
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(
-            "https://finnhub.io/api/v1/quote",
-            params={"symbol": symbol, "token": settings.finnhub_api_key},
-            timeout=10.0,
-        )
-        resp.raise_for_status()
-        data = resp.json()
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                "https://finnhub.io/api/v1/quote",
+                params={"symbol": symbol, "token": settings.finnhub_api_key},
+                timeout=10.0,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+    except httpx.HTTPError as e:
+        raise QuoteProviderError(f"Finnhub request failed for '{symbol}': {e}") from e
 
     price = data.get("c")
     if price is None or price == 0:
@@ -58,14 +63,17 @@ async def fetch_coingecko_price(symbol: str) -> float:
     if coin_id is None:
         raise QuoteNotFoundError(symbol)
 
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(
-            "https://api.coingecko.com/api/v3/simple/price",
-            params={"ids": coin_id, "vs_currencies": "usd"},
-            timeout=10.0,
-        )
-        resp.raise_for_status()
-        data = resp.json()
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                "https://api.coingecko.com/api/v3/simple/price",
+                params={"ids": coin_id, "vs_currencies": "usd"},
+                timeout=10.0,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+    except httpx.HTTPError as e:
+        raise QuoteProviderError(f"CoinGecko request failed for '{symbol}': {e}") from e
 
     price = data.get(coin_id, {}).get("usd")
     if price is None:
