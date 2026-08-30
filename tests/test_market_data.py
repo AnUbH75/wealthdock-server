@@ -21,8 +21,8 @@ TestingSessionLocal = async_sessionmaker(bind=engine, class_=AsyncSession, expir
 
 # Patch targets match how market_data.py imports these names (src.-prefixed),
 # since that's the module path actually registered in sys.modules at runtime.
-FINNHUB_PATCH_TARGET = "src.wealthdock_server.api.v1.market_data.fetch_finnhub_quote"
-COINGECKO_PATCH_TARGET = "src.wealthdock_server.api.v1.market_data.fetch_coingecko_price"
+FINNHUB_PATCH_TARGET = "wealthdock_server.api.v1.market_data.fetch_finnhub_quote"
+COINGECKO_PATCH_TARGET = "wealthdock_server.api.v1.market_data.fetch_coingecko_price"
 
 
 async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
@@ -129,7 +129,7 @@ async def test_crypto_quote_dispatches_to_coingecko() -> None:
 @pytest.mark.asyncio
 async def test_unknown_symbol_returns_404_not_500() -> None:
     """Verify a symbol the provider can't find returns a clean 404."""
-    from src.wealthdock_server.core.providers import QuoteNotFoundError
+    from wealthdock_server.core.providers import QuoteNotFoundError
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
