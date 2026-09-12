@@ -161,3 +161,21 @@ class BankConnection(Base):
         server_default=func.now(),
         nullable=False,
     )
+
+class FxRateCache(Base):
+    """TTL-based cache for FX rate tables, one row per base currency.
+
+    Stores the full rates-against-base blob from a single provider call
+    (cheaper than one row per currency pair, since Frankfurter returns
+    every target currency for a base in one response). Rows are considered
+    stale after a TTL window checked at the query layer, not enforced by
+    the schema — same pattern as QuoteCache.
+    """
+
+    __tablename__ = "fx_rate_cache"
+
+    base_currency: Mapped[str] = mapped_column(String(3), primary_key=True)
+    rates: Mapped[dict[str, float]] = mapped_column(JSON, nullable=False)
+    fetched_at: Mapped[datetime.datetime] = mapped_column(
+        TZDateTime, default=utcnow, server_default=func.now(), nullable=False
+    )
