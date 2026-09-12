@@ -1,4 +1,4 @@
-"""Outbound clients for external market-data providers (Finnhub, CoinGecko)."""
+"""Outbound clients for external market-data providers (Finnhub, CoinGecko, Frankfurter)."""
 
 import httpx
 
@@ -31,6 +31,16 @@ COINGECKO_ID_MAP: dict[str, str] = {
     "USDT": "tether",
     "USDC": "usd-coin",
 }
+
+# Currencies Frankfurter (ECB reference rates) publishes. Used for a cheap
+# early rejection before making a round trip for an unsupported base.
+FRANKFURTER_SUPPORTED_CURRENCIES: set[str] = {
+    "EUR", "USD", "GBP", "JPY", "CHF", "AUD", "CAD", "NZD", "SEK", "NOK",
+    "DKK", "PLN", "CZK", "HUF", "RON", "TRY", "ILS", "INR", "IDR", "KRW",
+    "CNY", "HKD", "SGD", "MYR", "PHP", "THB", "ZAR", "BRL", "MXN", "ISK",
+}
+
+FRANKFURTER_BASE_URL = "https://api.frankfurter.dev/v2"
 
 
 async def fetch_finnhub_quote(symbol: str) -> float:
@@ -79,3 +89,32 @@ async def fetch_coingecko_price(symbol: str) -> float:
     if price is None:
         raise QuoteNotFoundError(symbol)
     return float(price)
+
+
+async def fetch_exchange_rates(base: str) -> dict[str, float]:
+    """Fetch the latest ECB reference rates for `base` against all other
+    currencies Frankfurter tracks, keyed by target currency code.
+
+    Note: Frankfurter serves ECB rates, which update once daily
+    (~16:00 CET) — fine for portfolio valuation, not for intraday FX.
+    """
+    base = base.upper()
+    if base not in FRANKFURTER_SUPPORTED_CURRENCIES:
+        raise QuoteNotFoundError(base)
+
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                f"{FRANKFURTER_BASE_URL}/latest",
+                params={"base": base},
+                timeout=10.0,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+    except httpx.HTTPError as e:
+        raise QuoteProviderError(f"Frankfurter request failed for base '{base}': {e}") from e
+
+    rates = data.get("rates")
+    if not rates:
+        raise QuoteNotFoundError(base)
+    return {currency: float(rate) for currency, rate in rates.items()}
